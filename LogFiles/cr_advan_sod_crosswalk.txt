@@ -3,7 +3,7 @@
        log:  C:/Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic/code/L
 > ogFiles/cr_advan_sod_crosswalk.txt
   log type:  text
- opened on:  19 Jul 2022, 16:34:48
+ opened on:  20 Jul 2022, 14:27:54
 
 . 
 . /**************
@@ -45,394 +45,632 @@ file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic/other
     data/SOD/sod_branch_location.dta saved
 
 . 
-end of do-file
+.         * the chunk below only applies to mapping when we haven't received s
+> tore information 
+.         * on bank names from Advan ---
+.         /*
+> *** clean bank ticker mapping
+>         import excel "$datadir/SOD/Bank_Ticker_Mapping.xlsx", clear
+>         keep B C 
+>         rename (B C) (bank_name ticker_mother_company)
+>         tempfile ticker_map
+>         save `ticker_map'
+>         
+>         import delimited "$repodir/advan/t2/stores_vXV.csv", clear
+> * keep only US ones 
+>         keep if country_code == "US"
+>         
+>         * split the strings s.t. we have only the mother company for bank ti
+> ckers
+>         split ticker, parse("-") limit(1) gen(ticker_mother_company)
+>         rename ticker_mother_company1 ticker_mother_company
+>          
+>         merge m:1 ticker_mother_company using "`ticker_map'"
+>                 * manually check and put in bank names for those that are no
+> t matched 
+>                 tab ticker if _merge == 1
+>                 tab ticker_mother_company if _merge == 1
+>                 replace bank_name = "BB&T Corporation" if ticker == "BBT"
+>                 replace bank_name = "Beacon Bancorp" if ticker == "BEACON-A-
+> BCSB"
+>                 replace bank_name = "BNP Paribas SA" if ticker == "BNPQF-BW"
+>                 replace bank_name = "Carolina Financial Corporation" if tick
+> er == "CARO-CRESCOM"
+>                 replace bank_name = "Cornerstone Bancorp" if ticker == "CNBP
+> "
+>                 replace bank_name = "Fidelity Bank" if ticker == "FIDEL-A" 
+>                 replace bank_name = "F&M Bank Corp" if ticker_mother_company
+>  == "FMBM"
+>                 replace bank_name = "Keycorp" if ticker == "FNFG"
+>                 replace bank_name = "Gorham Savings Bank" if ticker == "GORH
+> AM-A"
+>                 replace bank_name = "HSBC Holdings plc" if ticker == "HBCYF"
+>                 replace bank_name = "John Marshall Bancorp" if ticker == "JM
+> SB"
+>                 replace bank_name = "Mascoma Bank" if ticker == "MASCOMA-A"
+>                 replace bank_name = "Ozark Bank" if ticker == "OZRK"
+>                 replace bank_name = "Banco Santander SA" if ticker == "SAN"
+>                 replace bank_name = "Suntruct Banks, Inc." if ticker == "STI
+> "
+>                 replace bank_name = "Toronto-Dominion Bank" if ticker == "TD
+> "
+>                 replace bank_name = "TSB Bank" if ticker == "TSB-A"
+> 
+>         drop _merge 
+>         drop if bank_name == ""
+>                 */      
+.                 
+.         * using store information sent by Advan to obtain bank names (more a
+> ccurate)
+.         import delimited "$repodir/advan/t2/stores_info.csv", clear
+(encoding automatically selected: ISO-8859-1)
+(5 vars, 48,953 obs)
 
-. sum
+.                 tempfile store_name
 
-    Variable |        Obs        Mean    Std. dev.       Min        Max
--------------+---------------------------------------------------------
-    uninumbr |     99,888    295222.4    177359.6          1     638237
-    namefull |          0
-    addresbr |          0
-      citybr |          0
-    cntynamb |          0
--------------+---------------------------------------------------------
-     stalpbr |          0
-       zipbr |     99,888    48715.65    28181.54        601      99929
-     city2br |          0
-sims_latit~e |     99,888    37.77996    5.321383  -21.31627   71.29328
-sims_longi~e |     99,888   -90.01768    15.42895  -170.7186    162.981
--------------+---------------------------------------------------------
-     namehcr |          0
-
-. gisid uninumbr
-
-. do "C:\Users\zsong98\AppData\Local\Temp\STD4214_000000.tmp"
-
-. *** clean bank ticker mapping
-.         import excel "$datadir/SOD/Bank_Ticker_Mapping.xlsx", clear
-(4 vars, 370 obs)
-
-.         keep B C 
-
-.         rename (B C) (bank_name ticker_mother_company)
-
-.         tempfile ticker_map
-
-.         save `ticker_map'
-file C:\Users\zsong98\AppData\Local\Temp\ST_4214_000001.tmp saved as .dta
+.                 save `store_name'
+file C:\Users\zsong98\AppData\Local\Temp\ST_31b0_000001.tmp saved as .dta
     format
 
-.         
 .         import delimited "$repodir/advan/t2/stores_vXV.csv", clear
 (encoding automatically selected: ISO-8859-1)
 (16 vars, 55,832 obs)
 
-. * keep only US ones 
-.         keep if country_code == "US"
-(7,181 observations deleted)
-
-.         
-.         * split the strings s.t. we have only the mother company for bank ti
-> ckers
-.         split ticker, parse("-") limit(1) gen(ticker_mother_company)
-variable created as string: 
-ticker_mot~1
-
-.         rename ticker_mother_company1 ticker_mother_company
-
-.          
-.         merge m:1 ticker_mother_company using "`ticker_map'"
+.         merge 1:1 id_store using `store_name', keepusing(company_name dba)
 
     Result                      Number of obs
     -----------------------------------------
-    Not matched                         7,210
-        from master                     6,884  (_merge==1)
-        from using                        326  (_merge==2)
+    Not matched                         7,489
+        from master                     7,184  (_merge==1)
+        from using                        305  (_merge==2)
 
-    Matched                            41,767  (_merge==3)
+    Matched                            48,648  (_merge==3)
     -----------------------------------------
 
-.                 * manually check and put in bank names for those that are no
-> t matched 
-.                 tab ticker if _merge == 1
+.         
+. /*      unmatched from master mainly due to foreign banks (only 3 are not)
+>     Result                      Number of obs
+>     -----------------------------------------
+>     Not matched                         7,489
+>         from master                     7,184  (_merge==1)
+>         from using                        305  (_merge==2)
+> 
+>     Matched                            48,648  (_merge==3)
+>     -----------------------------------------
+> */
+.         keep if _merge == 3
+(7,489 observations deleted)
 
-       ticker |      Freq.     Percent        Cum.
---------------+-----------------------------------
-      2892.TT |          7        0.10        0.10
-          BBT |      2,276       33.06       33.16
-BEACON-A-BCSB |         25        0.36       33.53
-     BNPQF-BW |        722       10.49       44.02
- CARO-CRESCOM |         66        0.96       44.97
-         CNBP |         14        0.20       45.18
-      FIDEL-A |        207        3.01       48.18
-         FMBM |         11        0.16       48.34
-  FMBM-FARMER |         25        0.36       48.71
-         FNFG |        439        6.38       55.08
-     GORHAM-A |         19        0.28       55.36
-        HBCYF |        146        2.12       57.48
-         JMSB |         11        0.16       57.64
-    MASCOMA-A |         31        0.45       58.09
-        NA.TO |          3        0.04       58.13
-         OZRK |        258        3.75       61.88
-          SAN |        547        7.95       69.83
-          STI |      1,384       20.10       89.93
-           TD |        675        9.81       99.74
-        TSB-A |         18        0.26      100.00
---------------+-----------------------------------
-        Total |      6,884      100.00
+.         drop _merge
 
-.                 tab ticker_mother_company if _merge == 1
+.         rename company_name bank_name
 
-ticker_moth |
- er_company |      Freq.     Percent        Cum.
-------------+-----------------------------------
-    2892.TT |          7        0.10        0.10
-        BBT |      2,276       33.06       33.16
-     BEACON |         25        0.36       33.53
-      BNPQF |        722       10.49       44.02
-       CARO |         66        0.96       44.97
-       CNBP |         14        0.20       45.18
-      FIDEL |        207        3.01       48.18
-       FMBM |         36        0.52       48.71
-       FNFG |        439        6.38       55.08
-     GORHAM |         19        0.28       55.36
-      HBCYF |        146        2.12       57.48
-       JMSB |         11        0.16       57.64
-    MASCOMA |         31        0.45       58.09
-      NA.TO |          3        0.04       58.13
-       OZRK |        258        3.75       61.88
-        SAN |        547        7.95       69.83
-        STI |      1,384       20.10       89.93
-         TD |        675        9.81       99.74
-        TSB |         18        0.26      100.00
-------------+-----------------------------------
-      Total |      6,884      100.00
+.         
+.         * save as intermediate to investigate matching rates later on
+.         save "$repodir/advan/t2/stores.dta", replace
+file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot
+    Traffic/advan/t2/stores.dta saved
 
-.                 replace bank_name = "BB&T Corporation" if ticker == "BBT"
-(2,276 real changes made)
+. /**************
+>         Matching Step
+>         ***************/
+. 
+. *** 1. joinby zip code (to generate all possible pairings within a zip code)
+.         rename zip zipbr
 
-.                 replace bank_name = "Beacon Bancorp" if ticker == "BEACON-A-
-> BCSB"
-(25 real changes made)
+.         * drop the strings with .0 at the end or zipcodes with form xxxxx-xx
+> xx
+.         replace zipbr = substr(zipbr, 1, strlen(zipbr)-2) if substr(zipbr, -
+> 2, 2) == ".0"
+(588 real changes made)
 
-.                 replace bank_name = "BNP Paribas SA" if ticker == "BNPQF-BW"
-(722 real changes made)
+.         replace zipbr = substr(zipbr, 1, strlen(zipbr)-5) if substr(zipbr, -
+> 5, 1) == "-"
+(2,883 real changes made)
 
-.                 replace bank_name = "Carolina Financial Corporation" if tick
-> er == "CARO-CRESCOM"
-(66 real changes made)
+.         destring zipbr, replace
+zipbr: all characters numeric; replaced as long
 
-.                 replace bank_name = "Cornerstone Bancorp" if ticker == "CNBP
-> "
-(14 real changes made)
+.         * keep only useful variables
+.         keep id_store store_lat store_lon address city state zipbr bank_name
+>  dba
 
-.                 replace bank_name = "Fidelity Bank" if ticker == "FIDEL-A" 
-(207 real changes made)
+.         joinby zipbr using "$datadir/SOD/sod_branch_location"
 
-.                 replace bank_name = "F&M Bank Corp" if ticker_mother_company
->  == "FMBM"
-(36 real changes made)
+.         
+. *** order and sort variables for better view
+.         gsort zipbr id_store
 
-.                 replace bank_name = "Keycorp" if ticker == "FNFG"
-(439 real changes made)
+.         order zipbr id_store uninumbr bank_name namehcr store_lat store_lon 
+> sims_latitude sims_longitude address addresbr city citybr state stalpbr
 
-.                 replace bank_name = "Gorham Savings Bank" if ticker == "GORH
-> AM-A"
-(19 real changes made)
+.         
+.         * drop those that are not in the same cities (wrongly recorded zip c
+> odes for PR)
+.         * and longitude, latitude really far apart
+.         gen lat_diff = abs(store_lat-sims_latitude) 
 
-.                 replace bank_name = "HSBC Holdings plc" if ticker == "HBCYF"
-(146 real changes made)
+.         gen long_diff = abs(store_lon-sims_longitude)
+(4 missing values generated)
 
-.                 replace bank_name = "John Marshall Bancorp" if ticker == "JM
-> SB"
-(11 real changes made)
+.         drop if (state != stalpbr) | lat_diff > 0.5 | long_diff > 0.5
+(1,079 observations deleted)
 
-.                 replace bank_name = "Mascoma Bank" if ticker == "MASCOMA-A"
-(31 real changes made)
-
-.                 replace bank_name = "Ozark Bank" if ticker == "OZRK"
-(258 real changes made)
-
-.                 replace bank_name = "Banco Santander SA" if ticker == "SAN"
-(547 real changes made)
-
-.                 replace bank_name = "Suntruct Banks, Inc." if ticker == "STI
-> "
-(1,384 real changes made)
-
-.                 replace bank_name = "Toronto-Dominion Bank" if ticker == "TD
-> "
-(675 real changes made)
-
-.                 replace bank_name = "TSB Bank" if ticker == "TSB-A"
-(18 real changes made)
+.         
+. *** exact matches of address
+.         * clean up the address abbreviations
+.         * gen rid of dots in address
+.         
+.         foreach x in address addresbr {
+  2.                 replace `x' = subinstr(`x', ".", "", .)
+  3.                 replace `x' = subinstr(`x', " + ", " ", .)
+  4.                 replace `x' = subinstr(`x', "Avenue", "Av", 1)
+  5.                 replace `x' = subinstr(`x', "Ave", "Av", 1)
+  6.                 replace `x' = subinstr(`x', "Road", "Rd", 1) 
+  7.                 replace `x' = subinstr(`x', "Drive", "Dr", 1)
+  8.                 replace `x' = subinstr(`x', "Place", "Pl", 1)
+  9.                 replace `x' = subinstr(`x', "Boulevard", "Blvd", 1)
+ 10.                 replace `x' = subinstr(`x', "Route", "Rt", 1)
+ 11.                 replace `x' = subinstr(`x', "Highway", "Hwy", 1)
+ 12.                 replace `x' = subinstr(`x', "Street", "St", 1)
+ 13.                 replace `x' = subinstr(`x', "Suite", "Ste", 1)
+ 14.                 replace `x' = subinstr(`x', "Court", "CT", 1)
+ 15.                 replace `x' = subinstr(`x', "Circle", "CIR", 1)
+ 16.                 replace `x' = subinstr(`x', "Plaza", "Plz", 1)
+ 17.                 replace `x' = subinstr(`x', "Lane", "Ln", 1)
+ 18.                 replace `x' = subinstr(`x', "Parkway", "Pkwy", 1)
+ 19.                 replace `x' = subinstr(`x', "Floor", "Fl", 1)
+ 20.                 replace `x' = subinstr(`x', "Turnpike", "Tpke", 1)
+ 21.                 replace `x' = subinstr(`x', "Trail", "Tr", 1)
+ 22.                 * replace the North, South, West, East (direction ones
+.                 replace `x' = subinstr(`x', " N ", " North ", 1)
+ 23.                 replace `x' = subinstr(`x', " S ", " South ", 1)
+ 24.                 replace `x' = subinstr(`x', " W ", " West ", 1)
+ 25.                 replace `x' = subinstr(`x', " E ", " East ", 1)
+ 26.                 replace `x' = subinstr(`x', " N", " North", 1) if substr(
+> `x', -2, 2) == " N"
+ 27.                 replace `x' = subinstr(`x', " S", " South", 1) if substr(
+> `x', -2, 2) == " S"
+ 28.                 replace `x' = subinstr(`x', " W", " West", 1) if substr(`
+> x', -2, 2) == " W"
+ 29.                 replace `x' = subinstr(`x', " E", " East", 1) if substr(`
+> x', -2, 2) == " E"
+ 30.                 * replace numbers (first-tenth)
+.                 replace `x' = subinstr(`x', "Fisrt", "1st", 1)
+ 31.                 replace `x' = subinstr(`x', "Second", "2nd", 1)
+ 32.                 replace `x' = subinstr(`x', "Third", "3rd", 1)
+ 33.                 replace `x' = subinstr(`x', "Fourth", "4th", 1) 
+ 34.                 replace `x' = subinstr(`x', "Fifth", "5th", 1)
+ 35.                 replace `x' = subinstr(`x', "Sixth", "6th", 1)  
+ 36.                 replace `x' = subinstr(`x', "Seventh", "7th", 1)
+ 37.                 replace `x' = subinstr(`x', "Eighth", "8th", 1) 
+ 38.                 replace `x' = subinstr(`x', "Ninth", "9th", 1)  
+ 39.                 replace `x' = subinstr(`x', "Tenth", "10th", 1)
+ 40.                 replace `x' = subinstr(`x', "One", "1", 1)
+ 41.                 replace `x' = subinstr(`x', "Two", "2", 1)
+ 42.                 replace `x' = subinstr(`x', "Three", "3", 1)    
+ 43.                 replace `x' = subinstr(`x', "Four", "4", 1)     
+ 44.                 replace `x' = subinstr(`x', "Five", "5", 1)     
+ 45.                 replace `x' = subinstr(`x', "Six", "6", 1)      
+ 46.                 replace `x' = subinstr(`x', "Seven", "7", 1)    
+ 47.                 replace `x' = subinstr(`x', "Eight", "8", 1)    
+ 48.                 replace `x' = subinstr(`x', "Nine", "9", 1)     
+ 49.                 replace `x' = subinstr(`x', "Ten", "10", 1)     
+ 50.         }
+(24,819 real changes made)
+(0 real changes made)
+(38,814 real changes made)
+(63,859 real changes made)
+(49,020 real changes made)
+(13,413 real changes made)
+(1,468 real changes made)
+(16,998 real changes made)
+(6,561 real changes made)
+(15,038 real changes made)
+(57,700 real changes made)
+(7,290 real changes made)
+(1,826 real changes made)
+(1,459 real changes made)
+(3,009 real changes made)
+(2,381 real changes made)
+(5,183 real changes made)
+(1,903 real changes made)
+(1,117 real changes made)
+(2,299 real changes made)
+(31,782 real changes made)
+(31,176 real changes made)
+(33,237 real changes made)
+(29,727 real changes made)
+(3,978 real changes made)
+(4,188 real changes made)
+(2,730 real changes made)
+(3,079 real changes made)
+(0 real changes made)
+(939 real changes made)
+(1,005 real changes made)
+(423 real changes made)
+(849 real changes made)
+(306 real changes made)
+(257 real changes made)
+(176 real changes made)
+(165 real changes made)
+(92 real changes made)
+(786 real changes made)
+(296 real changes made)
+(57 real changes made)
+(70 real changes made)
+(114 real changes made)
+(311 real changes made)
+(148 real changes made)
+(45 real changes made)
+(64 real changes made)
+(267 real changes made)
+(39,635 real changes made)
+(7 real changes made)
+(85,275 real changes made)
+(16,744 real changes made)
+(103,368 real changes made)
+(30,956 real changes made)
+(2,612 real changes made)
+(38,572 real changes made)
+(6,703 real changes made)
+(22,298 real changes made)
+(121,557 real changes made)
+(31,676 real changes made)
+(2,224 real changes made)
+(2,218 real changes made)
+(3,517 real changes made)
+(5,058 real changes made)
+(12,720 real changes made)
+(1,592 real changes made)
+(2,069 real changes made)
+(2,791 real changes made)
+(11,697 real changes made)
+(10,302 real changes made)
+(11,154 real changes made)
+(10,403 real changes made)
+(1,271 real changes made)
+(1,325 real changes made)
+(1,046 real changes made)
+(1,055 real changes made)
+(0 real changes made)
+(1,677 real changes made)
+(2,860 real changes made)
+(1,109 real changes made)
+(1,970 real changes made)
+(533 real changes made)
+(611 real changes made)
+(364 real changes made)
+(356 real changes made)
+(249 real changes made)
+(1,906 real changes made)
+(362 real changes made)
+(140 real changes made)
+(151 real changes made)
+(154 real changes made)
+(425 real changes made)
+(184 real changes made)
+(99 real changes made)
+(83 real changes made)
+(297 real changes made)
 
 . 
-.         drop _merge 
+.         * change all strings to lowercase
+.         foreach str in address addresbr bank_name dba namehcr namefull {
+  2.                 replace `str' = strlower(`str')
+  3.         }
+(571,037 real changes made)
+(571,046 real changes made)
+(571,065 real changes made)
+(571,065 real changes made)
+(539,069 real changes made)
+(571,051 real changes made)
 
-.         drop if bank_name == ""
-(10 observations deleted)
+.         
+.         gen exact = 1 if address == addresbr
+(539,820 missing values generated)
 
-.                         
-. 
-end of do-file
+.                 
+.         * keep those that have been exactly matched in a tempfile 
+.         preserve
 
-. do "C:\Users\zsong98\AppData\Local\Temp\STD4214_000000.tmp"
+.                 keep if exact == 1
+(539,820 observations deleted)
 
-. *** clean bank ticker mapping
-.         import excel "$datadir/SOD/Bank_Ticker_Mapping.xlsx", clear
-(4 vars, 370 obs)
+.                 *** note that the exact matches have duplicates (one id_stor
+> e matched to multiple branches)
+.                 replace namefull = subinstr(namefull, ", national associatio
+> n", "", .)  
+(18,334 real changes made)
 
-.         keep B C 
+.                 ustrdist bank_name namehcr, gen(banknamedist1)
 
-.         rename (B C) (bank_name ticker_mother_company)
+.                 ustrdist bank_name namefull, gen(banknamedist2)
 
-.         tempfile ticker_map
+.                 ustrdist dba namehcr, gen(banknamedist3)
 
-.         save `ticker_map'
-file C:\Users\zsong98\AppData\Local\Temp\ST_4214_000001.tmp saved as .dta
+.                 ustrdist dba namefull, gen(banknamedist4)
+
+.                 egen bankname_dist = rowmin(banknamedist1 banknamedist2 bank
+> namedist3 banknamedist4)
+
+.                 drop banknamedist*
+
+.                 * within exact exactly matched address, keep only the one br
+> anch that has the closest name to the bank_name in case of duplicates (in ca
+> se where there is no duplicates, the name different is ok as there are merge
+> rs and acquisitions and change of local branch name sometimes)
+.                 bysort id_store (bankname_dist): egen bankname_dist_min = mi
+> n(bankname_dist)
+
+.                 keep if bankname_dist_min == bankname_dist
+(426 observations deleted)
+
+.                 * do the same for each unique uninumbr as well
+.                 drop bankname_dist_min
+
+.                 bysort uninumbr (bankname_dist): egen bankname_dist_min = mi
+> n(bankname_dist)
+
+.                 keep if bankname_dist_min == bankname_dist
+(626 observations deleted)
+
+.                 tempfile exact
+
+.                 save `exact', replace
+(file C:\Users\zsong98\AppData\Local\Temp\ST_31b0_000003.tmp not found)
+file C:\Users\zsong98\AppData\Local\Temp\ST_31b0_000003.tmp saved as .dta
     format
 
-.         
-.         import delimited "$repodir/advan/t2/stores_vXV.csv", clear
-(encoding automatically selected: ISO-8859-1)
-(16 vars, 55,832 obs)
+.         restore
 
-. * keep only US ones 
-.         keep if country_code == "US"
-(7,181 observations deleted)
+.         * and drop the id_stores that have been exactly matched
+.         bysort id_store: egen exact_matched = max(exact) 
+(205,400 missing values generated)
 
-.         
-.         * split the strings s.t. we have only the mother company for bank ti
-> ckers
-.         split ticker, parse("-") limit(1) gen(ticker_mother_company)
-variable created as string: 
-ticker_mot~1
-
-.         rename ticker_mother_company1 ticker_mother_company
-
-.          
-.         merge m:1 ticker_mother_company using "`ticker_map'"
-
-    Result                      Number of obs
-    -----------------------------------------
-    Not matched                         7,210
-        from master                     6,884  (_merge==1)
-        from using                        326  (_merge==2)
-
-    Matched                            41,767  (_merge==3)
-    -----------------------------------------
-
-.                 * manually check and put in bank names for those that are no
-> t matched 
-.                 tab ticker if _merge == 1
-
-       ticker |      Freq.     Percent        Cum.
---------------+-----------------------------------
-      2892.TT |          7        0.10        0.10
-          BBT |      2,276       33.06       33.16
-BEACON-A-BCSB |         25        0.36       33.53
-     BNPQF-BW |        722       10.49       44.02
- CARO-CRESCOM |         66        0.96       44.97
-         CNBP |         14        0.20       45.18
-      FIDEL-A |        207        3.01       48.18
-         FMBM |         11        0.16       48.34
-  FMBM-FARMER |         25        0.36       48.71
-         FNFG |        439        6.38       55.08
-     GORHAM-A |         19        0.28       55.36
-        HBCYF |        146        2.12       57.48
-         JMSB |         11        0.16       57.64
-    MASCOMA-A |         31        0.45       58.09
-        NA.TO |          3        0.04       58.13
-         OZRK |        258        3.75       61.88
-          SAN |        547        7.95       69.83
-          STI |      1,384       20.10       89.93
-           TD |        675        9.81       99.74
-        TSB-A |         18        0.26      100.00
---------------+-----------------------------------
-        Total |      6,884      100.00
-
-.                 tab ticker_mother_company if _merge == 1
-
-ticker_moth |
- er_company |      Freq.     Percent        Cum.
-------------+-----------------------------------
-    2892.TT |          7        0.10        0.10
-        BBT |      2,276       33.06       33.16
-     BEACON |         25        0.36       33.53
-      BNPQF |        722       10.49       44.02
-       CARO |         66        0.96       44.97
-       CNBP |         14        0.20       45.18
-      FIDEL |        207        3.01       48.18
-       FMBM |         36        0.52       48.71
-       FNFG |        439        6.38       55.08
-     GORHAM |         19        0.28       55.36
-      HBCYF |        146        2.12       57.48
-       JMSB |         11        0.16       57.64
-    MASCOMA |         31        0.45       58.09
-      NA.TO |          3        0.04       58.13
-       OZRK |        258        3.75       61.88
-        SAN |        547        7.95       69.83
-        STI |      1,384       20.10       89.93
-         TD |        675        9.81       99.74
-        TSB |         18        0.26      100.00
-------------+-----------------------------------
-      Total |      6,884      100.00
-
-.                 replace bank_name = "BB&T Corporation" if ticker == "BBT"
-(2,276 real changes made)
-
-.                 replace bank_name = "Beacon Bancorp" if ticker == "BEACON-A-
-> BCSB"
-(25 real changes made)
-
-.                 replace bank_name = "BNP Paribas SA" if ticker == "BNPQF-BW"
-(722 real changes made)
-
-.                 replace bank_name = "Carolina Financial Corporation" if tick
-> er == "CARO-CRESCOM"
-(66 real changes made)
-
-.                 replace bank_name = "Cornerstone Bancorp" if ticker == "CNBP
-> "
-(14 real changes made)
-
-.                 replace bank_name = "Fidelity Bank" if ticker == "FIDEL-A" 
-(207 real changes made)
-
-.                 replace bank_name = "F&M Bank Corp" if ticker_mother_company
->  == "FMBM"
-(36 real changes made)
-
-.                 replace bank_name = "Keycorp" if ticker == "FNFG"
-(439 real changes made)
-
-.                 replace bank_name = "Gorham Savings Bank" if ticker == "GORH
-> AM-A"
-(19 real changes made)
-
-.                 replace bank_name = "HSBC Holdings plc" if ticker == "HBCYF"
-(146 real changes made)
-
-.                 replace bank_name = "John Marshall Bancorp" if ticker == "JM
-> SB"
-(11 real changes made)
-
-.                 replace bank_name = "Mascoma Bank" if ticker == "MASCOMA-A"
-(31 real changes made)
-
-.                 replace bank_name = "Ozark Bank" if ticker == "OZRK"
-(258 real changes made)
-
-.                 replace bank_name = "Banco Santander SA" if ticker == "SAN"
-(547 real changes made)
-
-.                 replace bank_name = "Suntruct Banks, Inc." if ticker == "STI
-> "
-(1,384 real changes made)
-
-.                 replace bank_name = "Toronto-Dominion Bank" if ticker == "TD
-> "
-(675 real changes made)
-
-.                 replace bank_name = "TSB Bank" if ticker == "TSB-A"
-(18 real changes made)
-
-. 
-.         drop _merge 
-
-.         drop if bank_name == ""
-(10 observations deleted)
-
-.                         
-. 
-end of do-file
-
-. sum
+.         sum lat_diff long_diff if exact == 1 // get a sense of how close (la
+> t-long) the exact matches are 
 
     Variable |        Obs        Mean    Std. dev.       Min        Max
 -------------+---------------------------------------------------------
-      ticker |          0
-persistent~d |          0
-    id_store |     48,641     2908620     1362628    1861454    5955182
-polygon_co~e |     48,641    .9978767    .0396266         .1          1
-   open_date |          0
--------------+---------------------------------------------------------
-  close_date |          0
-   store_lat |     48,641    37.79375    5.126544    19.6396   71.29239
-   store_lon |     48,641   -89.71693    16.53748   -166.553  -66.98903
-     address |          0
-        city |          0
--------------+---------------------------------------------------------
-       state |          0
-         zip |          0
-country_code |          0
-footprint_id |     48,641    6.62e+18    2.77e+18   2.15e+14   9.22e+18
-footprint_~t |     48,577    6.62e+18    2.77e+18   1.08e+13   9.22e+18
--------------+---------------------------------------------------------
-identical_~e |        155     3998882     1454940    1866235    5576007
-ticker_mot~y |          0
-   bank_name |          0
+    lat_diff |     31,245    .0014216    .0081234          0   .3920288
+   long_diff |     31,245    .0017573    .0098125          0    .495491
 
-. exit, clear
+.         drop if exact_matched == 1
+(365,665 observations deleted)
+
+.         
+. *** fuzzy matches based on distances
+.         ustrdist address addresbr, gen(addresdist)
+
+.         gsort zipbr id_store addresdist
+
+.         order addresdist address addresbr bank_name namehcr namefull *_diff
+
+.         
+.         * keep only Levenstein distances smaller than 10 ones 
+.         drop if addresdist > 10 
+(145,174 observations deleted)
+
+.         
+.         /* 1. within each zip-id_store combinations, first keep the ones wit
+> h Levenstein distances <= 2 
+>         gen fuzzy_dist_1 = 1 if addresdist == 1
+>         * save the above data 
+>         preserve
+>                 keep if fuzzy_dist_1 == 1
+>                 tempfile fuzzy_dist_1
+>                 save `fuzzy_dist_1', replace
+>         restore
+>         * and drop the id_stores that have been exactly matched
+>         bysort id_store: egen fuzzy_dist_1_matched = max(fuzzy_dist_1) 
+>         sum lat_diff long_diff if fuzzy_dist_1 == 1 // get a sense of how cl
+> ose the fuzzy dist 1 matches are 
+>         drop if fuzzy_dist_1_matched == 1
+>         */
+.         // note that for the exact matches, the lat-long differences are aro
+> und 0.0015 
+. 
+.         * 1. get string distances between bank_name (advan) and namehcr/name
+> full (SOD)
+.                 replace namefull = subinstr(namefull, ", national associatio
+> n", "", .)  
+(25,317 real changes made)
+
+.                 ustrdist bank_name namehcr, gen(banknamedist1)
+
+.                 ustrdist bank_name namefull, gen(banknamedist2)
+
+.                 ustrdist dba namehcr, gen(banknamedist3)
+
+.                 ustrdist dba namefull, gen(banknamedist4)
+
+.                 egen bankname_dist = rowmin(banknamedist1 banknamedist2 bank
+> namedist3 banknamedist4)
+
+.                 drop banknamedist*
+
+.                 * manually check for a threshold that shows that bank names 
+> are the same
+.                 gsort zipbr id_store bankname_dist
+
+.                 * also keep only the closest bank names for each unique stor
+> e 
+.                 bysort id_store (bankname_dist): keep if _n == 1
+(45,826 observations deleted)
+
+.                 drop if bankname_dist > 5               
+(6,632 observations deleted)
+
+.         
+.         * 2. now check the lat-long coordinates and addresses to see if we h
+> ave good matches    
+.                 drop if addresdist > 5
+(3,064 observations deleted)
+
+.                 drop if lat_diff > 0.001 | long_diff > 0.001 // here we are 
+> really conservative as there are also pretty good matchings if we take lat/l
+> ong_diff to be around 0.002. 
+(2,007 observations deleted)
+
+.                 gen fuzzy = 1 
+
+. 
+. *** merge exact and fuzzy match results together
+.         append using "`exact'"
+
+.         
+.         * order and keep variables 
+.         keep bank_name name* address addresbr zipbr id_store uninumbr store_
+> lat store_lon sims_* city state exact fuzzy 
+
+.         replace exact = 0 if exact >=.
+(2,697 real changes made)
+
+.         replace fuzzy = 0 if fuzzy >=.
+(30,193 real changes made)
+
+.         
+.         order id_store uninumbr 
+
+.                 
+.         * within each duplicated match from uninumbr to id_store, keep only 
+> the exact matched ones
+.         bysort uninumbr (exact): keep if _n == 1
+(188 observations deleted)
+
+.         * note that there are still a few duplicates due to duplicated unibr
+> anch 
+.         duplicates tag id_store, gen(dup)
+
+Duplicates in terms of id_store
+
+.         tab dup  
+
+        dup |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |     32,522       99.45       99.45
+          1 |        174        0.53       99.98
+          2 |          6        0.02      100.00
+------------+-----------------------------------
+      Total |     32,702      100.00
+
+.         * but looking over the duplicates shows that id_store is correctly m
+> atched
+.         * to each branch --
+.         
+. save "$datadir/advan_sod_crosswalk", replace
+file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic/other
+    data/advan_sod_crosswalk.dta saved
+
+. 
+. /**************
+>         Histograms
+>         ***************/
+.         
+. *** matching rates of banks in the Advan sample already
+.         use "$datadir/advan_sod_crosswalk", clear
+
+.         duplicates drop id_store, force
+
+Duplicates in terms of id_store
+
+(91 observations deleted)
+
+.         merge 1:1 id_store using "$repodir/advan/t2/stores.dta"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                        16,037
+        from master                         0  (_merge==1)
+        from using                     16,037  (_merge==2)
+
+    Matched                            32,611  (_merge==3)
+    -----------------------------------------
+
+.         replace bank_name = strlower(bank_name)
+(16,037 real changes made)
+
+.         egen matched = rowmax(exact fuzzy)
+(16,037 missing values generated)
+
+.         bysort bank_name: egen match_total = sum(matched)
+
+.         bysort bank_name: gen match_rate = match_total / _N
+
+.         * keep only those with matched total > 10 for plot
+.         * keep if match_total > 10
+.         * plot
+.         graph hbar match_rate, over(dba, sort(1) descending label(labsize(*0
+> .23))) ytitle("Match Rate of Banks from Advan Sample")
+
+.         graph export "$figdir/advan_match_rate.pdf", replace
+file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot
+    Traffic/output/figures/zs/advan_match_rate.pdf saved as PDF format
+
+.         graph hbar match_total, over(dba, sort(1) descending label(labsize(*
+> 0.23))) ytitle("Total Matched Branches from Advan Sample")
+
+.         graph export "$figdir/advan_match_total.pdf", replace
+file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot
+    Traffic/output/figures/zs/advan_match_total.pdf saved as PDF format
+
+.         
+. *** matching rates of banks from the SOD data
+.         use "$datadir/advan_sod_crosswalk", clear
+
+.         merge 1:1 uninumbr using "$datadir/SOD/sod_branch_location"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                        67,186
+        from master                         0  (_merge==1)
+        from using                     67,186  (_merge==2)
+
+    Matched                            32,702  (_merge==3)
+    -----------------------------------------
+
+.         * standardize the newly merged full name of banks
+.         replace namefull = strlower(namefull)
+(67,184 real changes made)
+
+.         replace namefull = subinstr(namefull, ", national association", "", 
+> .)  
+(11,747 real changes made)
+
+.         egen matched = rowmax(exact fuzzy)
+(67,186 missing values generated)
+
+.         bysort namefull: egen match_total = sum(matched)
+
+.         bysort namefull: gen match_rate = match_total / _N
+
+.         * keep only those that have at least positive match rates 
+.         drop if match_rate == 0
+(42,146 observations deleted)
+
+.         * keep only those with matched total > 15 for plot
+.         keep if match_total > 15
+(11,745 observations deleted)
+
+.         * plot
+.         graph hbar match_rate, over(namefull, sort(1) descending label(labsi
+> ze(*0.30))) ytitle("Match Rate of Banks from SOD (only those with more than 
+> 15 matches)")
+
+.         graph export "$figdir/sod_match_rate.pdf", replace
+file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot
+    Traffic/output/figures/zs/sod_match_rate.pdf saved as PDF format
+
+.         graph hbar match_total, over(namefull, sort(1) descending label(labs
+> ize(*0.30))) ytitle("Total Matched Branches from SOD (only those with more t
+> han 15 matches)")
+
+.         graph export "$figdir/sod_match_total.pdf", replace
+file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot
+    Traffic/output/figures/zs/sod_match_total.pdf saved as PDF format
+
+.         
+. ****************************************************************************
+> ****
+. capture log close

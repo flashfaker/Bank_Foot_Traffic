@@ -7,7 +7,7 @@ local fname cr_advan_sod_crosswalk
 
 Author: Zirui Song
 Date Created: Jul 14th, 2022
-Date Modified: Jul 14th, 2022
+Date Modified: Jul 20th, 2022
 
 */
 
@@ -25,6 +25,7 @@ Date Modified: Jul 14th, 2022
 	global repodir = "/Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic"
 	global logdir = "$repodir/code/LogFiles"
 	global datadir = "$repodir/other data"
+	global figdir = "$repodir/output/figures/zs"
 	
 	* Start plain text log file with same name
 	log using "$logdir/`fname'.txt", replace text
@@ -50,6 +51,9 @@ Date Modified: Jul 14th, 2022
 	bysort uninumbr: keep if _n == _N
 	save "$datadir/SOD/sod_branch_location", replace
 
+	* the chunk below only applies to mapping when we haven't received store information 
+	* on bank names from Advan ---
+	/*
 *** clean bank ticker mapping
 	import excel "$datadir/SOD/Bank_Ticker_Mapping.xlsx", clear
 	keep B C 
@@ -89,7 +93,31 @@ Date Modified: Jul 14th, 2022
 
 	drop _merge 
 	drop if bank_name == ""
-			
+		*/	
+		
+	* using store information sent by Advan to obtain bank names (more accurate)
+	import delimited "$repodir/advan/t2/stores_info.csv", clear
+		tempfile store_name
+		save `store_name'
+	import delimited "$repodir/advan/t2/stores_vXV.csv", clear
+	merge 1:1 id_store using `store_name', keepusing(company_name dba)
+	
+/*	unmatched from master mainly due to foreign banks (only 3 are not)
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                         7,489
+        from master                     7,184  (_merge==1)
+        from using                        305  (_merge==2)
+
+    Matched                            48,648  (_merge==3)
+    -----------------------------------------
+*/
+	keep if _merge == 3
+	drop _merge
+	rename company_name bank_name
+	
+	* save as intermediate to investigate matching rates later on
+	save "$repodir/advan/t2/stores.dta", replace
 /**************
 	Matching Step
 	***************/
@@ -101,7 +129,7 @@ Date Modified: Jul 14th, 2022
 	replace zipbr = substr(zipbr, 1, strlen(zipbr)-5) if substr(zipbr, -5, 1) == "-"
 	destring zipbr, replace
 	* keep only useful variables
-	keep id_store store_lat store_lon address city state zipbr bank_name
+	keep id_store store_lat store_lon address city state zipbr bank_name dba
 	joinby zipbr using "$datadir/SOD/sod_branch_location"
 	
 *** order and sort variables for better view
@@ -172,7 +200,7 @@ Date Modified: Jul 14th, 2022
 	}
 
 	* change all strings to lowercase
-	foreach str in address addresbr bank_name namehcr namefull {
+	foreach str in address addresbr bank_name dba namehcr namefull {
 		replace `str' = strlower(`str')
 	}
 	
@@ -185,10 +213,16 @@ Date Modified: Jul 14th, 2022
 		replace namefull = subinstr(namefull, ", national association", "", .)	
 		ustrdist bank_name namehcr, gen(banknamedist1)
 		ustrdist bank_name namefull, gen(banknamedist2)
-		egen bankname_dist = rowmin(banknamedist1 banknamedist2)
-		drop banknamedist1 banknamedist2
+		ustrdist dba namehcr, gen(banknamedist3)
+		ustrdist dba namefull, gen(banknamedist4)
+		egen bankname_dist = rowmin(banknamedist1 banknamedist2 banknamedist3 banknamedist4)
+		drop banknamedist*
 		* within exact exactly matched address, keep only the one branch that has the closest name to the bank_name in case of duplicates (in case where there is no duplicates, the name different is ok as there are mergers and acquisitions and change of local branch name sometimes)
 		bysort id_store (bankname_dist): egen bankname_dist_min = min(bankname_dist)
+		keep if bankname_dist_min == bankname_dist
+		* do the same for each unique uninumbr as well
+		drop bankname_dist_min
+		bysort uninumbr (bankname_dist): egen bankname_dist_min = min(bankname_dist)
 		keep if bankname_dist_min == bankname_dist
 		tempfile exact
 		save `exact', replace
@@ -222,16 +256,18 @@ Date Modified: Jul 14th, 2022
 	// note that for the exact matches, the lat-long differences are around 0.0015 
 
 	* 1. get string distances between bank_name (advan) and namehcr/namefull (SOD)
-	replace namefull = subinstr(namefull, ", national association", "", .)	
-	ustrdist bank_name namehcr, gen(banknamedist1)
-	ustrdist bank_name namefull, gen(banknamedist2)
-	egen bankname_dist = rowmin(banknamedist1 banknamedist2)
-	drop banknamedist1 banknamedist2
+		replace namefull = subinstr(namefull, ", national association", "", .)	
+		ustrdist bank_name namehcr, gen(banknamedist1)
+		ustrdist bank_name namefull, gen(banknamedist2)
+		ustrdist dba namehcr, gen(banknamedist3)
+		ustrdist dba namefull, gen(banknamedist4)
+		egen bankname_dist = rowmin(banknamedist1 banknamedist2 banknamedist3 banknamedist4)
+		drop banknamedist*
 		* manually check for a threshold that shows that bank names are the same
 		gsort zipbr id_store bankname_dist
-		drop if bankname_dist > 5		
 		* also keep only the closest bank names for each unique store 
 		bysort id_store (bankname_dist): keep if _n == 1
+		drop if bankname_dist > 5		
 	
 	* 2. now check the lat-long coordinates and addresses to see if we have good matches	
 		drop if addresdist > 5
@@ -247,10 +283,12 @@ Date Modified: Jul 14th, 2022
 	replace fuzzy = 0 if fuzzy >=.
 	
 	order id_store uninumbr	
-	
+		
+	* within each duplicated match from uninumbr to id_store, keep only the exact matched ones
+	bysort uninumbr (exact): keep if _n == 1
 	* note that there are still a few duplicates due to duplicated unibranch 
 	duplicates tag id_store, gen(dup)
-	tab dup 
+	tab dup  
 	* but looking over the duplicates shows that id_store is correctly matched
 	* to each branch --
 	
@@ -260,6 +298,40 @@ save "$datadir/advan_sod_crosswalk", replace
 	Histograms
 	***************/
 	
+*** matching rates of banks in the Advan sample already
+	use "$datadir/advan_sod_crosswalk", clear
+	duplicates drop id_store, force
+	merge 1:1 id_store using "$repodir/advan/t2/stores.dta"
+	replace bank_name = strlower(bank_name)
+	egen matched = rowmax(exact fuzzy)
+	bysort bank_name: egen match_total = sum(matched)
+	bysort bank_name: gen match_rate = match_total / _N
+	* keep only those with matched total > 10 for plot
+	* keep if match_total > 10
+	* plot
+	graph hbar match_rate, over(dba, sort(1) descending label(labsize(*0.23))) ytitle("Match Rate of Banks from Advan Sample")
+	graph export "$figdir/advan_match_rate.pdf", replace
+	graph hbar match_total, over(dba, sort(1) descending label(labsize(*0.23))) ytitle("Total Matched Branches from Advan Sample")
+	graph export "$figdir/advan_match_total.pdf", replace
+	
+*** matching rates of banks from the SOD data
+	use "$datadir/advan_sod_crosswalk", clear
+	merge 1:1 uninumbr using "$datadir/SOD/sod_branch_location"
+	* standardize the newly merged full name of banks
+	replace namefull = strlower(namefull)
+	replace namefull = subinstr(namefull, ", national association", "", .)	
+	egen matched = rowmax(exact fuzzy)
+	bysort namefull: egen match_total = sum(matched)
+	bysort namefull: gen match_rate = match_total / _N
+	* keep only those that have at least positive match rates 
+	drop if match_rate == 0
+	* keep only those with matched total > 15 for plot
+	keep if match_total > 15
+	* plot
+	graph hbar match_rate, over(namefull, sort(1) descending label(labsize(*0.30))) ytitle("Match Rate of Banks from SOD (only those with more than 15 matches)")
+	graph export "$figdir/sod_match_rate.pdf", replace
+	graph hbar match_total, over(namefull, sort(1) descending label(labsize(*0.30))) ytitle("Total Matched Branches from SOD (only those with more than 15 matches)")
+	graph export "$figdir/sod_match_total.pdf", replace
 	
 ********************************************************************************
 capture log close
