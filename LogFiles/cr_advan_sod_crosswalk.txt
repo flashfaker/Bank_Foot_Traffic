@@ -1,0 +1,438 @@
+------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  C:/Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic/code/L
+> ogFiles/cr_advan_sod_crosswalk.txt
+  log type:  text
+ opened on:  19 Jul 2022, 16:34:48
+
+. 
+. /**************
+>         Clean Data
+>         ***************/
+.         
+.         use "$datadir/SOD/sodupdate2021.dta", clear
+
+. * first drop all years prior to 2015 as Advan data only from 2015-2022
+.         gsort year
+
+.         drop if year < 2015
+(1,897,012 observations deleted)
+
+.         
+. * check uninumbr (unique location for each branch (regardless of M&As)
+.         gsort uninumbr
+
+.         
+. * drop duplicates and also keep only variables useful for matching
+.         keep uninumbr-zipbr city2br sims_latitude sims_longitude namehcr 
+
+.         * make sure lat and long are not missing
+.         drop if sims_latitude == . | sims_longitude == .s
+(1,593 observations deleted)
+
+.         gduplicates drop 
+
+Duplicates in terms of all variables
+
+(358,791 observations deleted)
+
+.         * keep the most recent ones 
+.         bysort uninumbr: keep if _n == _N
+(155,954 observations deleted)
+
+.         save "$datadir/SOD/sod_branch_location", replace
+file /Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic/other
+    data/SOD/sod_branch_location.dta saved
+
+. 
+end of do-file
+
+. sum
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+    uninumbr |     99,888    295222.4    177359.6          1     638237
+    namefull |          0
+    addresbr |          0
+      citybr |          0
+    cntynamb |          0
+-------------+---------------------------------------------------------
+     stalpbr |          0
+       zipbr |     99,888    48715.65    28181.54        601      99929
+     city2br |          0
+sims_latit~e |     99,888    37.77996    5.321383  -21.31627   71.29328
+sims_longi~e |     99,888   -90.01768    15.42895  -170.7186    162.981
+-------------+---------------------------------------------------------
+     namehcr |          0
+
+. gisid uninumbr
+
+. do "C:\Users\zsong98\AppData\Local\Temp\STD4214_000000.tmp"
+
+. *** clean bank ticker mapping
+.         import excel "$datadir/SOD/Bank_Ticker_Mapping.xlsx", clear
+(4 vars, 370 obs)
+
+.         keep B C 
+
+.         rename (B C) (bank_name ticker_mother_company)
+
+.         tempfile ticker_map
+
+.         save `ticker_map'
+file C:\Users\zsong98\AppData\Local\Temp\ST_4214_000001.tmp saved as .dta
+    format
+
+.         
+.         import delimited "$repodir/advan/t2/stores_vXV.csv", clear
+(encoding automatically selected: ISO-8859-1)
+(16 vars, 55,832 obs)
+
+. * keep only US ones 
+.         keep if country_code == "US"
+(7,181 observations deleted)
+
+.         
+.         * split the strings s.t. we have only the mother company for bank ti
+> ckers
+.         split ticker, parse("-") limit(1) gen(ticker_mother_company)
+variable created as string: 
+ticker_mot~1
+
+.         rename ticker_mother_company1 ticker_mother_company
+
+.          
+.         merge m:1 ticker_mother_company using "`ticker_map'"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                         7,210
+        from master                     6,884  (_merge==1)
+        from using                        326  (_merge==2)
+
+    Matched                            41,767  (_merge==3)
+    -----------------------------------------
+
+.                 * manually check and put in bank names for those that are no
+> t matched 
+.                 tab ticker if _merge == 1
+
+       ticker |      Freq.     Percent        Cum.
+--------------+-----------------------------------
+      2892.TT |          7        0.10        0.10
+          BBT |      2,276       33.06       33.16
+BEACON-A-BCSB |         25        0.36       33.53
+     BNPQF-BW |        722       10.49       44.02
+ CARO-CRESCOM |         66        0.96       44.97
+         CNBP |         14        0.20       45.18
+      FIDEL-A |        207        3.01       48.18
+         FMBM |         11        0.16       48.34
+  FMBM-FARMER |         25        0.36       48.71
+         FNFG |        439        6.38       55.08
+     GORHAM-A |         19        0.28       55.36
+        HBCYF |        146        2.12       57.48
+         JMSB |         11        0.16       57.64
+    MASCOMA-A |         31        0.45       58.09
+        NA.TO |          3        0.04       58.13
+         OZRK |        258        3.75       61.88
+          SAN |        547        7.95       69.83
+          STI |      1,384       20.10       89.93
+           TD |        675        9.81       99.74
+        TSB-A |         18        0.26      100.00
+--------------+-----------------------------------
+        Total |      6,884      100.00
+
+.                 tab ticker_mother_company if _merge == 1
+
+ticker_moth |
+ er_company |      Freq.     Percent        Cum.
+------------+-----------------------------------
+    2892.TT |          7        0.10        0.10
+        BBT |      2,276       33.06       33.16
+     BEACON |         25        0.36       33.53
+      BNPQF |        722       10.49       44.02
+       CARO |         66        0.96       44.97
+       CNBP |         14        0.20       45.18
+      FIDEL |        207        3.01       48.18
+       FMBM |         36        0.52       48.71
+       FNFG |        439        6.38       55.08
+     GORHAM |         19        0.28       55.36
+      HBCYF |        146        2.12       57.48
+       JMSB |         11        0.16       57.64
+    MASCOMA |         31        0.45       58.09
+      NA.TO |          3        0.04       58.13
+       OZRK |        258        3.75       61.88
+        SAN |        547        7.95       69.83
+        STI |      1,384       20.10       89.93
+         TD |        675        9.81       99.74
+        TSB |         18        0.26      100.00
+------------+-----------------------------------
+      Total |      6,884      100.00
+
+.                 replace bank_name = "BB&T Corporation" if ticker == "BBT"
+(2,276 real changes made)
+
+.                 replace bank_name = "Beacon Bancorp" if ticker == "BEACON-A-
+> BCSB"
+(25 real changes made)
+
+.                 replace bank_name = "BNP Paribas SA" if ticker == "BNPQF-BW"
+(722 real changes made)
+
+.                 replace bank_name = "Carolina Financial Corporation" if tick
+> er == "CARO-CRESCOM"
+(66 real changes made)
+
+.                 replace bank_name = "Cornerstone Bancorp" if ticker == "CNBP
+> "
+(14 real changes made)
+
+.                 replace bank_name = "Fidelity Bank" if ticker == "FIDEL-A" 
+(207 real changes made)
+
+.                 replace bank_name = "F&M Bank Corp" if ticker_mother_company
+>  == "FMBM"
+(36 real changes made)
+
+.                 replace bank_name = "Keycorp" if ticker == "FNFG"
+(439 real changes made)
+
+.                 replace bank_name = "Gorham Savings Bank" if ticker == "GORH
+> AM-A"
+(19 real changes made)
+
+.                 replace bank_name = "HSBC Holdings plc" if ticker == "HBCYF"
+(146 real changes made)
+
+.                 replace bank_name = "John Marshall Bancorp" if ticker == "JM
+> SB"
+(11 real changes made)
+
+.                 replace bank_name = "Mascoma Bank" if ticker == "MASCOMA-A"
+(31 real changes made)
+
+.                 replace bank_name = "Ozark Bank" if ticker == "OZRK"
+(258 real changes made)
+
+.                 replace bank_name = "Banco Santander SA" if ticker == "SAN"
+(547 real changes made)
+
+.                 replace bank_name = "Suntruct Banks, Inc." if ticker == "STI
+> "
+(1,384 real changes made)
+
+.                 replace bank_name = "Toronto-Dominion Bank" if ticker == "TD
+> "
+(675 real changes made)
+
+.                 replace bank_name = "TSB Bank" if ticker == "TSB-A"
+(18 real changes made)
+
+. 
+.         drop _merge 
+
+.         drop if bank_name == ""
+(10 observations deleted)
+
+.                         
+. 
+end of do-file
+
+. do "C:\Users\zsong98\AppData\Local\Temp\STD4214_000000.tmp"
+
+. *** clean bank ticker mapping
+.         import excel "$datadir/SOD/Bank_Ticker_Mapping.xlsx", clear
+(4 vars, 370 obs)
+
+.         keep B C 
+
+.         rename (B C) (bank_name ticker_mother_company)
+
+.         tempfile ticker_map
+
+.         save `ticker_map'
+file C:\Users\zsong98\AppData\Local\Temp\ST_4214_000001.tmp saved as .dta
+    format
+
+.         
+.         import delimited "$repodir/advan/t2/stores_vXV.csv", clear
+(encoding automatically selected: ISO-8859-1)
+(16 vars, 55,832 obs)
+
+. * keep only US ones 
+.         keep if country_code == "US"
+(7,181 observations deleted)
+
+.         
+.         * split the strings s.t. we have only the mother company for bank ti
+> ckers
+.         split ticker, parse("-") limit(1) gen(ticker_mother_company)
+variable created as string: 
+ticker_mot~1
+
+.         rename ticker_mother_company1 ticker_mother_company
+
+.          
+.         merge m:1 ticker_mother_company using "`ticker_map'"
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                         7,210
+        from master                     6,884  (_merge==1)
+        from using                        326  (_merge==2)
+
+    Matched                            41,767  (_merge==3)
+    -----------------------------------------
+
+.                 * manually check and put in bank names for those that are no
+> t matched 
+.                 tab ticker if _merge == 1
+
+       ticker |      Freq.     Percent        Cum.
+--------------+-----------------------------------
+      2892.TT |          7        0.10        0.10
+          BBT |      2,276       33.06       33.16
+BEACON-A-BCSB |         25        0.36       33.53
+     BNPQF-BW |        722       10.49       44.02
+ CARO-CRESCOM |         66        0.96       44.97
+         CNBP |         14        0.20       45.18
+      FIDEL-A |        207        3.01       48.18
+         FMBM |         11        0.16       48.34
+  FMBM-FARMER |         25        0.36       48.71
+         FNFG |        439        6.38       55.08
+     GORHAM-A |         19        0.28       55.36
+        HBCYF |        146        2.12       57.48
+         JMSB |         11        0.16       57.64
+    MASCOMA-A |         31        0.45       58.09
+        NA.TO |          3        0.04       58.13
+         OZRK |        258        3.75       61.88
+          SAN |        547        7.95       69.83
+          STI |      1,384       20.10       89.93
+           TD |        675        9.81       99.74
+        TSB-A |         18        0.26      100.00
+--------------+-----------------------------------
+        Total |      6,884      100.00
+
+.                 tab ticker_mother_company if _merge == 1
+
+ticker_moth |
+ er_company |      Freq.     Percent        Cum.
+------------+-----------------------------------
+    2892.TT |          7        0.10        0.10
+        BBT |      2,276       33.06       33.16
+     BEACON |         25        0.36       33.53
+      BNPQF |        722       10.49       44.02
+       CARO |         66        0.96       44.97
+       CNBP |         14        0.20       45.18
+      FIDEL |        207        3.01       48.18
+       FMBM |         36        0.52       48.71
+       FNFG |        439        6.38       55.08
+     GORHAM |         19        0.28       55.36
+      HBCYF |        146        2.12       57.48
+       JMSB |         11        0.16       57.64
+    MASCOMA |         31        0.45       58.09
+      NA.TO |          3        0.04       58.13
+       OZRK |        258        3.75       61.88
+        SAN |        547        7.95       69.83
+        STI |      1,384       20.10       89.93
+         TD |        675        9.81       99.74
+        TSB |         18        0.26      100.00
+------------+-----------------------------------
+      Total |      6,884      100.00
+
+.                 replace bank_name = "BB&T Corporation" if ticker == "BBT"
+(2,276 real changes made)
+
+.                 replace bank_name = "Beacon Bancorp" if ticker == "BEACON-A-
+> BCSB"
+(25 real changes made)
+
+.                 replace bank_name = "BNP Paribas SA" if ticker == "BNPQF-BW"
+(722 real changes made)
+
+.                 replace bank_name = "Carolina Financial Corporation" if tick
+> er == "CARO-CRESCOM"
+(66 real changes made)
+
+.                 replace bank_name = "Cornerstone Bancorp" if ticker == "CNBP
+> "
+(14 real changes made)
+
+.                 replace bank_name = "Fidelity Bank" if ticker == "FIDEL-A" 
+(207 real changes made)
+
+.                 replace bank_name = "F&M Bank Corp" if ticker_mother_company
+>  == "FMBM"
+(36 real changes made)
+
+.                 replace bank_name = "Keycorp" if ticker == "FNFG"
+(439 real changes made)
+
+.                 replace bank_name = "Gorham Savings Bank" if ticker == "GORH
+> AM-A"
+(19 real changes made)
+
+.                 replace bank_name = "HSBC Holdings plc" if ticker == "HBCYF"
+(146 real changes made)
+
+.                 replace bank_name = "John Marshall Bancorp" if ticker == "JM
+> SB"
+(11 real changes made)
+
+.                 replace bank_name = "Mascoma Bank" if ticker == "MASCOMA-A"
+(31 real changes made)
+
+.                 replace bank_name = "Ozark Bank" if ticker == "OZRK"
+(258 real changes made)
+
+.                 replace bank_name = "Banco Santander SA" if ticker == "SAN"
+(547 real changes made)
+
+.                 replace bank_name = "Suntruct Banks, Inc." if ticker == "STI
+> "
+(1,384 real changes made)
+
+.                 replace bank_name = "Toronto-Dominion Bank" if ticker == "TD
+> "
+(675 real changes made)
+
+.                 replace bank_name = "TSB Bank" if ticker == "TSB-A"
+(18 real changes made)
+
+. 
+.         drop _merge 
+
+.         drop if bank_name == ""
+(10 observations deleted)
+
+.                         
+. 
+end of do-file
+
+. sum
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+      ticker |          0
+persistent~d |          0
+    id_store |     48,641     2908620     1362628    1861454    5955182
+polygon_co~e |     48,641    .9978767    .0396266         .1          1
+   open_date |          0
+-------------+---------------------------------------------------------
+  close_date |          0
+   store_lat |     48,641    37.79375    5.126544    19.6396   71.29239
+   store_lon |     48,641   -89.71693    16.53748   -166.553  -66.98903
+     address |          0
+        city |          0
+-------------+---------------------------------------------------------
+       state |          0
+         zip |          0
+country_code |          0
+footprint_id |     48,641    6.62e+18    2.77e+18   2.15e+14   9.22e+18
+footprint_~t |     48,577    6.62e+18    2.77e+18   1.08e+13   9.22e+18
+-------------+---------------------------------------------------------
+identical_~e |        155     3998882     1454940    1866235    5576007
+ticker_mot~y |          0
+   bank_name |          0
+
+. exit, clear
