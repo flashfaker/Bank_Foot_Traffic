@@ -7,7 +7,7 @@ local fname cr_advan_sod_crosswalk
 
 Author: Zirui Song
 Date Created: Jul 14th, 2022
-Date Modified: Jul 20th, 2022
+Date Modified: Jul 21th, 2022
 
 */
 
@@ -24,7 +24,7 @@ Date Modified: Jul 20th, 2022
 	* notice that repodir path for Mac/Windows might differ
 	global repodir = "/Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic"
 	global logdir = "$repodir/code/LogFiles"
-	global datadir = "$repodir/other data"
+	global datadir = "$repodir/data/source data"
 	global figdir = "$repodir/output/figures/zs"
 	
 	* Start plain text log file with same name
@@ -96,10 +96,10 @@ Date Modified: Jul 20th, 2022
 		*/	
 		
 	* using store information sent by Advan to obtain bank names (more accurate)
-	import delimited "$repodir/advan/t2/stores_info.csv", clear
+	import delimited "$datadir/advan/t2/stores_info.csv", clear
 		tempfile store_name
 		save `store_name'
-	import delimited "$repodir/advan/t2/stores_vXV.csv", clear
+	import delimited "$datadir/advan/t2/stores_vXV.csv", clear
 	merge 1:1 id_store using `store_name', keepusing(company_name dba)
 	
 /*	unmatched from master mainly due to foreign banks (only 3 are not)
@@ -117,7 +117,7 @@ Date Modified: Jul 20th, 2022
 	rename company_name bank_name
 	
 	* save as intermediate to investigate matching rates later on
-	save "$repodir/advan/t2/stores.dta", replace
+	save "$datadir/advan/t2/stores.dta", replace
 /**************
 	Matching Step
 	***************/
@@ -301,7 +301,7 @@ save "$datadir/advan_sod_crosswalk", replace
 *** matching rates of banks in the Advan sample already
 	use "$datadir/advan_sod_crosswalk", clear
 	duplicates drop id_store, force
-	merge 1:1 id_store using "$repodir/advan/t2/stores.dta"
+	merge 1:1 id_store using "$datadir/advan/t2/stores.dta"
 	replace bank_name = strlower(bank_name)
 	egen matched = rowmax(exact fuzzy)
 	bysort bank_name: egen match_total = sum(matched)
@@ -336,7 +336,7 @@ save "$datadir/advan_sod_crosswalk", replace
 *** get unmatched sample for inspection 
 	use "$datadir/advan_sod_crosswalk", clear
 	duplicates drop id_store, force
-	merge 1:1 id_store using "$repodir/advan/t2/stores.dta"
+	merge 1:1 id_store using "$datadir/advan/t2/stores.dta"
 	keep if _merge == 2
 	drop _merge 
 	keep id_store address bank_name store_* city state ticker-country_code dba
