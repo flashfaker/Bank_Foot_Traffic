@@ -309,9 +309,9 @@ save "$datadir/advan_sod_crosswalk", replace
 	* keep only those with matched total > 10 for plot
 	* keep if match_total > 10
 	* plot
-	graph hbar match_rate, over(dba, sort(1) descending label(labsize(*0.23))) ytitle("Match Rate of Banks from Advan Sample")
+	graph hbar match_rate, over(bank_name, sort(1) descending label(labsize(*0.3))) ytitle("Match Rate of Banks from Advan Sample")
 	graph export "$figdir/advan_match_rate.pdf", replace
-	graph hbar match_total, over(dba, sort(1) descending label(labsize(*0.23))) ytitle("Total Matched Branches from Advan Sample")
+	graph hbar match_total, over(bank_name, sort(1) descending label(labsize(*0.3))) ytitle("Total Matched Branches from Advan Sample")
 	graph export "$figdir/advan_match_total.pdf", replace
 	
 *** matching rates of banks from the SOD data
@@ -333,6 +333,14 @@ save "$datadir/advan_sod_crosswalk", replace
 	graph hbar match_total, over(namefull, sort(1) descending label(labsize(*0.30))) ytitle("Total Matched Branches from SOD (only those with more than 15 matches)")
 	graph export "$figdir/sod_match_total.pdf", replace
 	
+*** get unmatched sample for inspection 
+	use "$datadir/advan_sod_crosswalk", clear
+	duplicates drop id_store, force
+	merge 1:1 id_store using "$repodir/advan/t2/stores.dta"
+	keep if _merge == 2
+	drop _merge 
+	keep id_store address bank_name store_* city state ticker-country_code dba
+	save "$datadir/unmatched_advan_branches.dta", replace
 ********************************************************************************
 capture log close
 exit
