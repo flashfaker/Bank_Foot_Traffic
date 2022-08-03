@@ -26,6 +26,7 @@ Date Modified: Aug 3rd, 2022
 	global logdir = "$repodir/code/LogFiles"
 	global datadir = "$repodir/data"
 	global figdir = "$repodir/output/figures/zs"
+	global tabdir = "$repodir/output/tables/zs"
 	
 	* Start plain text log file with same name
 	log using "$logdir/`fname'.txt", replace text
@@ -77,8 +78,107 @@ Date Modified: Aug 3rd, 2022
 	
 *** merge with SOD data 
 	fmerge 1:1 uninumbr year using "`crosswalk_sod'"
-	
+		drop if _merge == 2
+/*
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                     2,128,127
+        from master                    12,371  (_merge==1)
+        from using                  2,115,756  (_merge==2)
+
+    matched                           172,364  (_merge==3)
+    -----------------------------------------
+	manually check the unmatched 12,371 obs from master show that most unmatched
+	observations are in 2019-2021, due to closing of bank branches probably
+	* this is somewhat reflected in the large amount of 0s for "dwelled_store" variable,
+	which records the number of devices dwelling more than 5 minutes at the store 
+*/
+	drop if _merge == 1
+	drop _merge 
 *** simple linear regression models 
+	
+	* generate annual change in traffic (according to advan definition, devices_plot/devices)
+	foreach x in _store _plot _store_or_plot {
+		gen traffic`x' = devices`x' / devices
+	}
+	* generate annual change in raw foot traffic
+	foreach var of varlist devices_store devices_plot devices_store_or_plot {
+		bysort id_store (year): gen delta_`var' = (`var'[_n] - `var'[_n-1]) / `var'[_n-1]
+	}
+	* generate annual change in traffic as defined above
+	foreach var of varlist traffic_store traffic_plot traffic_store_or_plot {
+		bysort id_store (year): gen delta_`var' = (`var'[_n] - `var'[_n-1]) / `var'[_n-1]
+	}
+	
+	* simple linear regression models based on raw foot traffic 
+	
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe depsumbr `var', absorb(year id_store) 
+			outreg2 using "$tabdir/dep_traffic_prediction_model.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) replace ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)	
+		}
+		else {
+			reghdfe depsumbr `var', absorb(year id_store) 
+			outreg2 using "$tabdir/dep_traffic_prediction_model.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) append ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)
+		}
+	}
+	* add clustering by state
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe depsumbr `var', absorb(year id_store) vce(cl stnumb)
+			outreg2 using "$tabdir/dep_traffic_prediction_model_clst.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) replace ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)	
+		}
+		else {
+			reghdfe depsumbr `var', absorb(year id_store) vce(cl stnumb)
+			outreg2 using "$tabdir/dep_traffic_prediction_model_clst.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) append ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)
+		}
+	}
+	* add clustering by county
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe depsumbr `var', absorb(year id_store) vce(cl cntynumb)
+			outreg2 using "$tabdir/dep_traffic_prediction_model_clcnty.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) replace ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)	
+		}
+		else {
+			reghdfe depsumbr `var', absorb(year id_store) vce(cl cntynumb)
+			outreg2 using "$tabdir/dep_traffic_prediction_model_clcnty.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) append ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)
+		}
+	}
+	* add clustering by zip 
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe depsumbr `var', absorb(year id_store) vce(cl zipbr)
+			outreg2 using "$tabdir/dep_traffic_prediction_model_clzip.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) replace ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)	
+		}
+		else {
+			reghdfe depsumbr `var', absorb(year id_store) vce(cl zipbr)
+			outreg2 using "$tabdir/dep_traffic_prediction_model_clzip.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("XD") ///
+			bracket bdec(1) sdec(1) append ///
+			addtext(Branch FE, Yes, Year FE, Yes, Note: standard errors clustering at zip level)
+		}
+	}
 	
 	
 ********************************************************************************
