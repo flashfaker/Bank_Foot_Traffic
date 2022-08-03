@@ -1,0 +1,47 @@
+------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  C:/Users/zsong98/Dropbox (Chicago Booth)/Bank Foot Traffic/code/L
+> ogFiles/an_advan_bank_foottraffic.txt
+  log type:  text
+ opened on:   3 Aug 2022, 15:09:51
+
+. 
+. /**************
+>         Read Data
+>         ***************/
+.         
+. *** prepare/clean SOD data due to missing uninumbr for some obs (not importa
+> nt, all before year 2011) 
+.         use "$datadir/source data/SOD/sodupdate2021", clear
+
+.         drop if uninumbr == .
+(225,118 observations deleted)
+
+.         tempfile crosswalk_sod
+
+.         save `crosswalk_sod'
+file C:\Users\zsong98\AppData\Local\Temp\ST_2a14_000001.tmp saved as .dta
+    format
+
+.         
+. ***     merge with the crosswalk to SOD 
+.         * prepare the crosswalk between uninumbr and id_store
+.         use "$datadir/source data/advan_sod_crosswalk", clear
+
+.                 * drop duplicates regarding id_store for now
+.                 duplicates drop id_store, force // 97 obs deleted for now
+
+Duplicates in terms of id_store
+
+(97 observations deleted)
+
+.                 tempfile crosswalk 
+
+.                 save `crosswalk'
+file C:\Users\zsong98\AppData\Local\Temp\ST_2a14_000002.tmp saved as .dta
+    format
+
+. 
+.         use "$datadir/cleaned data/weekly_advan_traffic", clear
+
+.         fmerge m:1 id_store using "`crosswalk'"
