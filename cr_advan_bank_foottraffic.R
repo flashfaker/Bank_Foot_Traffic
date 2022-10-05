@@ -50,6 +50,8 @@ for (t in ticker) {
   variables <- c("devices_store", "devices_plot", "devices_store_or_plot", 
                  "dwelled_store", "dwelled_plot", "dwelled_store_or_plot",
                  "devices", "devices_50", "employees")
+  DT<-DT[, c('id_store', 'year', 'week', variables), with = FALSE]
+  setnafill(DT, fill = 0)   # need to fill NAs by 0 in order to compute the mean of traffic (sometimes Advan data records zero traffic with missing)
   dt <- DT[, lapply(.SD, mean), by=. (id_store, year, week), .SDcols = variables]
   write.csv(dt, paste0(outdir, paste0("Data_", t, ".csv")), row.names = FALSE)
   rm(dt, DT, data_list, advan_files)

@@ -34,13 +34,6 @@ Date Modified: Oct 5th, 2022
 /**************
 	Read Data
 	***************/
-	
-*** prepare/clean SOD data due to missing uninumbr for some obs (not important, all before year 2011) 
-	use "$datadir/source data/SOD/sodupdate2021", clear
-	drop if uninumbr == .
-	tempfile crosswalk_sod
-	save `crosswalk_sod'
-	
 ***	merge with the crosswalk to SOD 
 	* prepare the crosswalk between uninumbr and id_store
 	use "$datadir/source data/advan_sod_crosswalk", clear
@@ -57,6 +50,7 @@ Date Modified: Oct 5th, 2022
 	drop dup
 	* merge with crosswalk to get uninumbr from sod for future merges 
 	fmerge m:1 id_store using "`crosswalk'"
+	* 13 unmatched banks from the crosswalk (i.e., not showing up in Advan foot traffic data)
 	keep if _merge == 3
 	drop _merge
 	save "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", replace
@@ -64,9 +58,17 @@ Date Modified: Oct 5th, 2022
 /**************
 	Prediction Model for Advan
 	***************/	
-	use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks", clear
+		
+*** prepare/clean SOD data due to missing uninumbr for some obs (not important, all before year 2011) 
+	use "$datadir/source data/SOD/sodupdate2021", clear
+	drop if uninumbr == .
+	tempfile crosswalk_sod
+	save `crosswalk_sod'
+	
+	use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", clear
 *** generate annual average foot traffic for each id_store (use 6/30 as the date (i.e., week 26) for annual split)
-*** since data only starts from week 35/36 of 2015, use the weeks in 2015 and first 26 weeks in 2016 as year 1, and 2022 data ends with week 27 ()
+*** use the last half year in 2015 and first 26 weeks in 2016 as year 1, and 2022 data ends with week 27 
+	drop if year == 2015 & week < 26
 	gen ayear = 2016 if year == 2015 | (year == 2016 & week <= 26)
 	foreach y of numlist 2016/2021 {
 		local yearplus1 = `y' + 1
@@ -86,21 +88,24 @@ Date Modified: Oct 5th, 2022
 	fmerge 1:1 uninumbr year using "`crosswalk_sod'"
 		drop if _merge == 2
 /*
+
     Result                           # of obs.
     -----------------------------------------
-    not matched                     2,128,127
-        from master                    12,371  (_merge==1)
-        from using                  2,115,756  (_merge==2)
+    not matched                     2,127,850
+        from master                    12,404  (_merge==1)
+        from using                  2,115,446  (_merge==2)
 
-    matched                           172,364  (_merge==3)
+    matched                           172,674  (_merge==3)
     -----------------------------------------
-	manually check the unmatched 12,371 obs from master show that most unmatched
+
+	manually check the unmatched 12,404 obs from master show that most unmatched
 	observations are in 2019-2021, due to closing of bank branches probably
 	* this is somewhat reflected in the large amount of 0s for "dwelled_store" variable,
 	which records the number of devices dwelling more than 5 minutes at the store 
 */
 	drop if _merge == 1
 	drop _merge 
+	
 *** simple linear regression models 
 	
 	* generate traffic (according to advan definition, devices_plot/devices)
@@ -117,6 +122,10 @@ Date Modified: Oct 5th, 2022
 		bysort id_store (year): gen delta_`var' = (`var'[_n] - `var'[_n-1]) / `var'[_n-1]
 		bysort id_store (year): gen logdiff_`var' = ln(`var'[_n]) - ln(`var'[_n-1])
 	}
+	
+	* (added 2022/10/05 -- drop the headquarter banks as those banks likely include deposits
+	* that are not necessarily retail deposits)
+	drop if bkmo == 1
 	
 	* simple linear regression models based on raw foot traffic 
 	
@@ -276,13 +285,164 @@ foreach y of varlist logdiffdepsumbr logdiffdepsumbr_w {
 		}
 	}
 }
-	
+
+*********************************************************************************
+/*same regression models but with stateXyear FE and branch FE structures (using only winsorized deposits)*/
+*********************************************************************************
+
+* generate state year fe structure
+egen state_year_fe = group(stalpbr year)
+
+* again, log diff models with winsorized deposits and traffic measures as wellas branch and stateXyear FEs 
+foreach y of varlist logdiffdepsumbr_w {
+	foreach var of varlist logdiff_* {
+		if "`var'" == "logdiff_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) 
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) 
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes)
+		}
+	}
+	* add clustering by state
+	foreach var of varlist logdiff_* {
+		if "`var'" == "logdiff_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl stnumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clst.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at state level)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl stnumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clst.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(2) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at state level)
+		}
+	}
+	* add clustering by county
+	foreach var of varlist logdiff_* {
+		if "`var'" == "logdiff_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl cntynumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clcnty.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at county level)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl cntynumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clcnty.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at county level)
+		}
+	}
+	* add clustering by zip 
+	foreach var of varlist logdiff_* {
+		if "`var'" == "logdiff_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl zipbr)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clzip.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at zip level)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl zipbr)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clzip.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at zip level)
+		}
+	}
+}
+
+* also output the raw associations between deposits and traffic changes using stateXyear FEs 
+* only check the raw and logged deposits (after winsorization) this time
+foreach y of varlist depsumbr_w logdepsumbr_w {
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) 
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) 
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes)
+		}
+	}
+	* add clustering by state
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl stnumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_clst.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at state level)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl stnumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clst.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at state level)
+		}
+	}
+	* add clustering by county
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl cntynumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clcnty.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at county level)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl cntynumb)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clcnty.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at county level)
+		}
+	}
+	* add clustering by zip 
+	foreach var of varlist delta_* {
+		if "`var'" == "delta_devices_store" {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl zipbr)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clzip.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) replace ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at zip level)	
+		}
+		else {
+			reghdfe `y' `var', absorb(state_year_fe id_store) vce(cl zipbr)
+			outreg2 using "$tabdir/`y'_traffic_prediction_model_styr_clzip.xls", /// 
+			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
+			bracket bdec(4) sdec(4) append ///
+			addtext(Branch FE, Yes, StateXYear FE, Yes, Note: standard errors clustering at zip level)
+		}
+	}
+}
+
 /**************
 	Event Study (DiD) w.r.t. Wells Fargo Scandal
 	***************/	
 	
-use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks", clear
-
+use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", clear
+* sample begins from the second half of 2015
+drop if year == 2015 & week < 26
 *** generate a week id to set panel data 
 egen id_week = group(year week)
 xtset id_store id_week
@@ -306,9 +466,10 @@ egen event_week = max(event_week_w)
 drop event_week_w
 
 *** regression tables 
+	* generate fixed effects structures
 	egen zip = group(zipbr)
 	egen st = group(state)
-	egen ct = group(city)
+	egen ct = group(state city) // as different cities in two states might somehow have the same name
 	egen zip_week = group(id_week zipbr)
 // 
 * baseline per-post TWFE for the DiD specification
@@ -318,8 +479,9 @@ eststo: reghdfe devices_store treatedxpost, vce(cl zip) absorb(id_store id_week)
 * generate traffic (according to advan definition, devices_plot/devices) (log)
 foreach x in _store _plot _store_or_plot {
 	gen traffic`x' = devices`x' / devices
-	* traffic per million devices 
-	replace traffic`x' = traffic`x'*1000000
+	* log traffic in order to interpret it in elasticities
+	replace traffic`x' = ln(traffic`x')
+	replace devices`x' = ln(devices`x')
 }
 
 save "$datadir/temp_weekly_traffic", replace
@@ -327,16 +489,22 @@ save "$datadir/temp_weekly_traffic", replace
 *** generate raw trends of devices and traffic around September 2016 (Event week)
 * check traffic measures around September 2016
 use "$datadir/temp_weekly_traffic", clear
+* generate the local variable that is the treatment week (week 66) 
+local t = event_week
+
 collapse (mean) devices_store traffic_store *_plot, by(id_week)
 twoway (tsline devices_store) (tsline devices_plot) (tsline devices_store_or_plot), ///
-graphregion(color(white)) xline(57, lcolor(black))
+graphregion(color(white)) xline(`t', lcolor(black))
 graph export "$figdir/devices_time_trend.pdf", replace
 twoway (tsline traffic_store) (tsline traffic_plot) (tsline traffic_store_or_plot), ///
-graphregion(color(white)) xline(57, lcolor(black))
+graphregion(color(white)) xline(`t', lcolor(black))
 graph export "$figdir/traffic_time_trend.pdf", replace
 
 * check traffic measures by treatment and control around September 2016
 use "$datadir/temp_weekly_traffic", clear
+* generate the local variable that is the treatment week (week 66) 
+local t = event_week
+
 collapse (mean) devices_store traffic_store *_plot, by(id_week treated)
 reshape wide *_store *_plot, i(id_week) j(treated)
 
@@ -348,18 +516,19 @@ foreach x in devices_store devices_plot devices_store_or_plot traffic_store traf
 foreach x in devices traffic {
 	twoway (tsline `x'_store0, lcolor(red) lpattern(solid)) (tsline `x'_plot0, lcolor(blue) lpattern(solid)) (tsline `x'_store_or_plot0, lcolor(green) lpattern(solid)) ///
 		(tsline `x'_store1, lcolor(red) lpattern(dash)) (tsline `x'_plot1, lcolor(blue) lpattern(dash)) (tsline `x'_store_or_plot1, lcolor(green) lpattern(dash)), ///
-		legend(cols(3) size(6pt)) tline(57, lcolor(black)) graphregion(color(white))	
+		legend(cols(3) size(6pt)) tline(`t', lcolor(black)) graphregion(color(white))	
 		graph export "$figdir/`x'_time_trend_bytreated.pdf", replace
 }
 
 
 *** use sample to generate event study (DiD) plots
 use "$datadir/temp_weekly_traffic", clear
-* winsorize traffic measures (kill large number of visits)
 
+/* winsorize traffic measures (kill large number of visits)
 foreach x of varlist devices_store devices_plot devices_store_or_plot traffic_* {
 	winsor2 `x', replace cuts(1 99)
 }
+*/
  
 foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_* {
 	if "`var'" == "devices_store" {
@@ -397,18 +566,19 @@ foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_
 
 *** dynamic regression tables and event-study plots
 * generate dummies relative to wells fargo scandal week
-forv i = 1/12 {
+forv i = 1/16 {
 	bysort id_store (id_week): gen event_plus`i'weeks = 1 if id_week - event_week == `i' & treated == 1
 	replace event_plus`i'weeks = 0 if event_plus`i'weeks >=.
 }
 
-forv i = 16(-1)1 {
+forv i = 12(-1)1 {
 	bysort id_store (id_week): gen event_minus`i'weeks = 1 if event_week - id_week == `i' & treated == 1
 	replace event_minus`i'weeks = 0 if event_minus`i'weeks >=.
 }
 * dynamic regressions
 * keep only those in the per-post period
-keep if id_week-event_week <= 12 | id_week-event_week >= 16 //drop this result
+drop if event_week-id_week > 12 // drop the pre-trends that are more than 12 months before 
+drop if id_week-event_week > 16 //drop this post-trends that are more than 16 months after
 
 foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_* {
 	if "`var'" == "devices_store" {
@@ -471,10 +641,10 @@ foreach x in twfe_dynamic twfe_dynamic_zipweek {
 		replace `v' = 0 if v1 == "se_Constant"
 	}
 
-	egen week = seq(), from(-16) block(2)
+	egen week = seq(), from(-12) block(2)
 	* note that constant is week 0, hence need to shift weeks after event +1
 	replace week = week + 1 if week >= 0
-	replace week = 0 if week == 13 // make constant to be the event date 
+	replace week = 0 if week == 17 // make constant to be the event date 
 	replace v1 = "event" if v1 == "Constant"
 	replace v1 = "se_event" if v1 == "se_Constant"
 	replace v1 = substr(v1, 1, 2)
@@ -494,33 +664,33 @@ foreach x in twfe_dynamic twfe_dynamic_zipweek {
 	twoway
 		(rcap v2ll v2uu week, lcolor($c1) lw(thin) lp(dash) yaxis(1))										
 		(scatter v2coef week, m(o) mcolor($c1) yaxis(1))														
-		, xlabel(-16(1)12, val angle(0) labsize(vsmall))
+		, xlabel(-12(1)16, val angle(0) labsize(vsmall))
 		yline(0, lcolor(black)) legend(off)								
 		xtitle("Weeks")
 		ytitle("Coefficient") $gpr
-		ylabel(-2(1)1) graphregion(color(white));
+		ylabel(-0.2(0.1)0.2) graphregion(color(white));
 	#delimit cr
 	graph export "$figdir/devices_store_evolution_`name'.pdf", replace
 	#delimit ;
 	twoway
 		(rcap v3ll v3uu week, lcolor($c1) lw(thin) lp(dash) yaxis(1))										
 		(scatter v3coef week, m(o) mcolor($c1) yaxis(1))														
-		, xlabel(-16(1)12, val angle(0) labsize(vsmall))
+		, xlabel(-12(1)16, val angle(0) labsize(vsmall))
 		yline(0, lcolor(black)) legend(off)								
 		xtitle("Weeks")
 		ytitle("Coefficient") $gpr
-		ylabel(-2(1)1) graphregion(color(white));
+		ylabel(-0.2(0.1)0.2) graphregion(color(white));
 	#delimit cr
 	graph export "$figdir/devices_plot_evolution_`name'.pdf", replace
 	#delimit ;
 	twoway
 		(rcap v4ll v4uu week, lcolor($c1) lw(thin) lp(dash) yaxis(1))										
 		(scatter v4coef week, m(o) mcolor($c1) yaxis(1))														
-		, xlabel(-16(1)12, val angle(0) labsize(vsmall))
+		, xlabel(-12(1)16, val angle(0) labsize(vsmall))
 		yline(0, lcolor(black)) legend(off)								
 		xtitle("Weeks")
 		ytitle("Coefficient") $gpr
-		ylabel(-2(1)1) graphregion(color(white));
+		ylabel(-0.2(0.1)0.2) graphregion(color(white));
 	#delimit cr
 	graph export "$figdir/devices_store_or_plot_evolution_`name'.pdf", replace
 
@@ -529,33 +699,33 @@ foreach x in twfe_dynamic twfe_dynamic_zipweek {
 	twoway
 		(rcap v5ll v5uu week, lcolor($c1) lw(thin) lp(dash) yaxis(1))										
 		(scatter v5coef week, m(o) mcolor($c1) yaxis(1))														
-		, xlabel(-16(1)12, val angle(0) labsize(vsmall))
+		, xlabel(-12(1)16, val angle(0) labsize(vsmall))
 		yline(0, lcolor(black)) legend(off)								
 		xtitle("Weeks")
 		ytitle("Coefficient") $gpr
-		ylabel(-.3(.1).1) graphregion(color(white));
+		ylabel(-0.2(0.1)0.2) graphregion(color(white));
 	#delimit cr
 	graph export "$figdir/traffic_store_evolution_`name'.pdf", replace
 	#delimit ;
 	twoway
 		(rcap v6ll v6uu week, lcolor($c1) lw(thin) lp(dash) yaxis(1))										
 		(scatter v6coef week, m(o) mcolor($c1) yaxis(1))														
-		, xlabel(-16(1)12, val angle(0) labsize(vsmall))
+		, xlabel(-12(1)16, val angle(0) labsize(vsmall))
 		yline(0, lcolor(black)) legend(off)								
 		xtitle("Weeks")
 		ytitle("Coefficient") $gpr
-		ylabel(-.3(.1).1) graphregion(color(white));
+		ylabel(-0.2(0.1)0.2) graphregion(color(white));
 	#delimit cr
 	graph export "$figdir/traffic_plot_evolution_`name'.pdf", replace
 	#delimit ;
 	twoway
 		(rcap v7ll v7uu week, lcolor($c1) lw(thin) lp(dash) yaxis(1))										
 		(scatter v7coef week, m(o) mcolor($c1) yaxis(1))														
-		, xlabel(-16(1)12, val angle(0) labsize(vsmall))
+		, xlabel(-12(1)16, val angle(0) labsize(vsmall))
 		yline(0, lcolor(black)) legend(off)								
 		xtitle("Weeks")
 		ytitle("Coefficient") $gpr
-		ylabel(-.3(.1).1) graphregion(color(white));
+		ylabel(-0.2(0.1)0.2) graphregion(color(white));
 	#delimit cr
 	graph export "$figdir/traffic_store_or_plot_evolution_`name'.pdf", replace
 	
