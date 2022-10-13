@@ -7,7 +7,7 @@ Purpose: Analyze the cleaned weekly foot traffic data of 82 banks from Advan
 
 Author: Zirui Song
 Date Created: Jul 21st, 2022
-Date Modified: Oct 5th, 2022
+Date Modified: Oct 13th, 2022
 
 */
 
@@ -79,7 +79,7 @@ Date Modified: Oct 5th, 2022
 	* this is to match SOD's June 30th report of total assets/deposits, etc.
 	
 *** collapse to get annual average of traffic 
-	collapse (mean) devices* dwelled_* (first) uninumbr, by(ayear id_store)
+	collapse (mean) devices* dwelled_* employees (first) uninumbr, by(ayear id_store)
 	rename ayear year
 	* as SOD haven't updated to 2022, drop those obs
 	drop if year == 2022
@@ -107,6 +107,10 @@ Date Modified: Oct 5th, 2022
 	drop _merge 
 	
 *** simple linear regression models 
+	* substract employees from the devices/dwelled traffic
+	foreach x in devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot {
+		replace `x' = `x' - employees
+	}
 	
 	* generate traffic (according to advan definition, devices_plot/devices)
 	foreach x in _store _plot _store_or_plot {
@@ -123,12 +127,26 @@ Date Modified: Oct 5th, 2022
 		bysort id_store (year): gen logdiff_`var' = ln(`var'[_n]) - ln(`var'[_n-1])
 	}
 	
+***	* (added 2022/10/05 -- also generate dwelled traffic (raw or traffic))
+	* generate dwelled traffic (according to advan definition, devices_plot/devices)
+	foreach x in dwelled_store dwelled_plot dwelled_store_or_plot employees {
+		gen tf_`x' = `x' / devices
+	}
+	* generate annual change in raw foot traffic
+	foreach var of varlist dwelled_store dwelled_plot dwelled_store_or_plot employees {
+		bysort id_store (year): gen delta_`var' = (`var'[_n] - `var'[_n-1]) / `var'[_n-1]
+		bysort id_store (year): gen logdiff_`var' = ln(`var'[_n]) - ln(`var'[_n-1])
+	}
+	* generate annual change in traffic as defined above
+	foreach var of varlist tf_dwelled_store tf_dwelled_plot tf_dwelled_store_or_plot tf_employees {
+		bysort id_store (year): gen delta_`var' = (`var'[_n] - `var'[_n-1]) / `var'[_n-1]
+		bysort id_store (year): gen logdiff_`var' = ln(`var'[_n]) - ln(`var'[_n-1])
+	}
 	* (added 2022/10/05 -- drop the headquarter banks as those banks likely include deposits
 	* that are not necessarily retail deposits)
 	drop if bkmo == 1
 	
-	* simple linear regression models based on raw foot traffic 
-	
+*** manipulation of bank deposits variable
 	* generate log deposits and log-diff deposits 
 	gen logdepsumbr = ln(depsumbr)
 	bysort id_store (year): gen deltadepsumbr = (depsumbr[_n] - depsumbr[_n-1]) / depsumbr[_n-1]
@@ -143,6 +161,7 @@ Date Modified: Oct 5th, 2022
 	save "$datadir/temp_annual_dep_traffic", replace
 	use "$datadir/temp_annual_dep_traffic", clear
 	
+* simple linear regression models based on raw foot traffic 
 	* output regression tables with period-on-period percentage change of traffic and deposits
 foreach y of varlist depsumbr logdepsumbr deltadepsumbr depsumbr_w logdepsumbr_w deltadepsumbr_w {
 	foreach var of varlist delta_* {
@@ -439,7 +458,63 @@ foreach y of varlist depsumbr_w logdepsumbr_w {
 /**************
 	Event Study (DiD) w.r.t. Wells Fargo Scandal
 	***************/	
-	
+
+*** create closest bank branch pair (wells fargo to other banks) using sod (
+*** but only those uninumbr matched to advan data)
+use "$datadir/source data/SOD/sodupdate2021", clear
+drop if uninumbr == .
+collapse (median) sims_latitude sims_longitude (first) stalpbr, by(uninumbr) //keep stcntybr so that we only compute distances within a county (to minimize computation required)
+drop if sims_latitude == . | sims_longitude == .
+* merge with advan data so that we don't identify branches not in the advan data set
+merge 1:m uninumbr using "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", keepusing(id_store)
+keep if _merge == 3
+drop _merge 
+collapse (median) sims_latitude sims_longitude (first) stalpbr, by(uninumbr)  
+
+* joinby stcntybr for calculation of distances
+tempfile sod_dist
+save `sod_dist'
+rename uninumbr key_uninumbr 
+rename (sims_latitude sims_longitude) (key_lat key_long)
+joinby stalpbr using `sod_dist'
+
+* calculate distances
+drop if key_uninumbr == uninumbr // drop self 
+geodist key_lat key_long sims_latitude sims_longitude, gen(dist)
+// keep 5 smallest distances in case that the closest one is still a Wells Fargo bank
+bysort key_uninumbr (dist): keep if _n <= 5
+save "$datadir/cleaned data/sod_branch_dist_2021", replace
+
+*** Added 2022/10/12 (closest branch to Wells Fargo branch)
+use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", clear
+*** generate Wells Fargo dummy so that we map nearest bank to Wells Fargo bank branch
+keep if strpos(bank_name, "wells fargo") != 0 
+keep uninumbr
+duplicates drop 
+tempfile wells_fargo_branches
+save `wells_fargo_branches'
+rename uninumbr key_uninumbr
+// merge on key_uninumbr to get only wells fargo bank matches
+merge 1:m key_uninumbr using "$datadir/cleaned data/sod_branch_dist_2021.dta", keepusing(uninumbr dist)
+keep if _merge == 3
+drop _merge
+// merge on uninumbr to make sure that the matched branches do not have Wells Fargo branches
+merge m:1 uninumbr using `wells_fargo_branches'
+* drop _merge == 3 (those are wells fargo branches get matched to one wells fargo branch)
+drop if _merge == 3 
+drop if _merge == 2 // (don't need using data)
+drop _merge 
+* notice that there are duplicates of uninumbr (meaning multiple branches matched to different Wells Fargo branches)
+* use the one that's closest to an Wells Fargo bank and then drop the other one 
+bysort uninumbr (dist): keep if _n == 1
+*** without the step specified above, we allow wells-fargo-other-branch pairs to have duplicates branch in different pairs
+* now take the smallest distances 
+bysort key_uninumbr (dist): keep if _n == 1
+
+save "$datadir/cleaned data/wells_fargo_nearest_branch.dta", replace
+
+***************************** begin Event Study ********************************
+********************************************************************************
 use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", clear
 * sample begins from the second half of 2015
 drop if year == 2015 & week < 26
@@ -478,13 +553,51 @@ eststo: reghdfe devices_store treatedxpost, vce(cl zip) absorb(id_store id_week)
 	
 * generate traffic (according to advan definition, devices_plot/devices) (log)
 foreach x in _store _plot _store_or_plot {
+	replace devices`x' = devices`x' - employees // subtract employees from our measure of traffic 
 	gen traffic`x' = devices`x' / devices
 	* log traffic in order to interpret it in elasticities
 	replace traffic`x' = ln(traffic`x')
 	replace devices`x' = ln(devices`x')
 }
+gen traffic_employees = employees / devices 
+replace employees = ln(employees)
+replace traffic_employees = ln(traffic_employees)
+* generate traffic based on dwelled devices
+foreach x in _store _plot _store_or_plot {
+	replace dwelled`x' = dwelled`x' - employees // subtract employees from our measure of traffic 
+	gen tf_dwelled`x' = dwelled`x' / devices
+	* log traffic in order to interpret it in elasticities
+	replace tf_dwelled`x' = ln(tf_dwelled`x')
+	replace dwelled`x' = ln(dwelled`x')
+}
 
 save "$datadir/temp_weekly_traffic", replace
+
+use "$datadir/temp_weekly_traffic", clear
+*** add dummy variable indicating nearest neighbor bank branch 
+preserve
+	fmerge m:1 uninumbr using "$datadir/cleaned data/wells_fargo_nearest_branch.dta", keepusing(key_uninumbr dist)
+	keep if _merge == 3 // all matched non-wells fargo branches with key_uninumbr (wells fargo branch
+	drop _merge
+	tempfile non_wf_branch
+	save `non_wf_branch'
+restore
+
+rename uninumbr key_uninumbr
+fmerge m:1 key_uninumbr using "$datadir/cleaned data/wells_fargo_nearest_branch.dta", keepusing(uninumbr dist)
+* drop non-matches (meaning banks not nearest neighbor to Wells Fargo branch)
+keep if _merge == 3 // all matched wells fargo branches with a nearest neighbor branch (non wells fargo) within the state
+drop _merge
+append using `non_wf_branch'
+
+* generate an id from both the key_uninumbr (the identifying )
+* get the smaller and bigger uninumbr so that we can use egen to get an id variable for pairs
+egen first_uninumbr = rowmin(uninumbr key_uninumbr)
+egen second_uninumbr = rowmax(uninumbr key_uninumbr)
+egen pair = group(first_uninumbr second_uninumbr)
+
+save "$datadir/temp_weekly_traffic_matchedbr", replace
+
 
 *** generate raw trends of devices and traffic around September 2016 (Event week)
 * check traffic measures around September 2016
@@ -520,7 +633,6 @@ foreach x in devices traffic {
 		graph export "$figdir/`x'_time_trend_bytreated.pdf", replace
 }
 
-
 *** use sample to generate event study (DiD) plots
 use "$datadir/temp_weekly_traffic", clear
 
@@ -530,7 +642,7 @@ foreach x of varlist devices_store devices_plot devices_store_or_plot traffic_* 
 }
 */
  
-foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_* {
+foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot employees traffic_* {
 	if "`var'" == "devices_store" {
 		reghdfe `var' treatedxpost, vce(cl zip) absorb(id_store id_week) 
 		outreg2 using "$tabdir/twfe_main.xls", /// 
@@ -546,7 +658,7 @@ foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_
 		addtext(Branch FE, Yes, Week FE, Yes, Note: standard errors clustering at zip level)
 	}
 }
-foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_* {
+foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot employees traffic_* {
 	if "`var'" == "devices_store" {
 		reghdfe `var' treatedxpost, vce(cl zip) absorb(id_store zip_week) 
 		outreg2 using "$tabdir/twfe_main_zipweek.xls", /// 
@@ -577,10 +689,10 @@ forv i = 12(-1)1 {
 }
 * dynamic regressions
 * keep only those in the per-post period
-drop if event_week-id_week > 12 // drop the pre-trends that are more than 12 months before 
-drop if id_week-event_week > 16 //drop this post-trends that are more than 16 months after
+drop if event_week-id_week > 12 // drop the pre-trends that are more than 12 weeks before 
+drop if id_week-event_week > 16 //drop this post-trends that are more than 16 weeks after
 
-foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_* {
+foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot employees traffic_* {
 	if "`var'" == "devices_store" {
 		reghdfe `var' event_minus* event_plus*, vce(cl zip) absorb(id_store id_week) 
 		outreg2 using "$tabdir/twfe_dynamic.xls", /// 
@@ -596,7 +708,7 @@ foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_
 		addtext(Branch FE, Yes, Week FE, Yes, Note: standard errors clustering at zip level)
 	}
 }
-foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_* {
+foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot employees traffic_* {
 	if "`var'" == "devices_store" {
 		reghdfe `var' event_minus* event_plus*, vce(cl zip) absorb(id_store zip_week) 
 		outreg2 using "$tabdir/twfe_dynamic_zipweek.xls", /// 
