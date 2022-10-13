@@ -598,7 +598,9 @@ egen pair = group(first_uninumbr second_uninumbr)
 
 save "$datadir/temp_weekly_traffic_matchedbr", replace
 
-
+/**************
+	Raw Traffic Trends 
+	***************/	
 *** generate raw trends of devices and traffic around September 2016 (Event week)
 * check traffic measures around September 2016
 use "$datadir/temp_weekly_traffic", clear
@@ -633,6 +635,9 @@ foreach x in devices traffic {
 		graph export "$figdir/`x'_time_trend_bytreated.pdf", replace
 }
 
+/**************
+	Dynamic Regressions
+	***************/
 *** use sample to generate event study (DiD) plots
 use "$datadir/temp_weekly_traffic", clear
 
@@ -675,6 +680,7 @@ foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_
 	}
 }
 
+use "$datadir/temp_weekly_traffic", clear
 
 *** dynamic regression tables and event-study plots
 * generate dummies relative to wells fargo scandal week
@@ -724,6 +730,43 @@ foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_
 		addtext(Branch FE, Yes, Week FE, Yes, Note: standard errors clustering at zip level)
 	}
 }
+
+* do the pair-wise regressions now 
+use "$datadir/temp_weekly_traffic_matchedbr", clear
+
+*** dynamic regression tables and event-study plots
+* generate dummies relative to wells fargo scandal week
+forv i = 1/16 {
+	bysort id_store (id_week): gen event_plus`i'weeks = 1 if id_week - event_week == `i' & treated == 1
+	replace event_plus`i'weeks = 0 if event_plus`i'weeks >=.
+}
+
+forv i = 12(-1)1 {
+	bysort id_store (id_week): gen event_minus`i'weeks = 1 if event_week - id_week == `i' & treated == 1
+	replace event_minus`i'weeks = 0 if event_minus`i'weeks >=.
+}
+* dynamic regressions
+* keep only those in the per-post period
+drop if event_week-id_week > 12 // drop the pre-trends that are more than 12 weeks before 
+drop if id_week-event_week > 16 //drop this post-trends that are more than 16 weeks after
+
+foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot employees traffic_* {
+	if "`var'" == "devices_store" {
+		reghdfe `var' event_minus* event_plus*, vce(cl zip) absorb(id_store id_week pair) 
+		outreg2 using "$tabdir/twfe_dynamic_pairwise.xls", /// 
+		title ("TWFE Estimator of Wells Fargo Scandal Effect") ctitle("`var'") ///
+		bracket bdec(4) sdec(2) replace ///
+		addtext(Branch FE, Yes, Week FE, Yes, Note: standard errors clustering at zip level)	
+	}
+	else {
+		reghdfe `var' event_minus* event_plus*, vce(cl zip) absorb(id_store id_week pair) 
+		outreg2 using "$tabdir/twfe_dynamic_pairwise.xls", /// 
+		title ("TWFE Estimator of Wells Fargo Scandal Effect") ctitle("`var'") ///
+		bracket bdec(4) sdec(2) append ///
+		addtext(Branch FE, Yes, Week FE, Yes, Note: standard errors clustering at zip level)
+	}
+}
+
 
 /**************
 	Figures
