@@ -43,12 +43,12 @@ Date Modified: Dec 4th, 2022
 	gsort uninumbr
 	
 * drop duplicates and also keep only variables useful for matching
-	keep uninumbr-zipbr city2br sims_latitude sims_longitude namehcr 
+	keep rssdid uninumbr-zipbr city2br sims_latitude sims_longitude namehcr 
 	* make sure lat and long are not missing
 	drop if sims_latitude == . | sims_longitude == .s
 	gduplicates drop 
-	* keep the most recent ones 
-	bysort uninumbr: keep if _n == _N
+	* keep the first ones
+	bysort uninumbr: keep if _n == 1
 	save "$datadir/SOD/sod_branch_location", replace
 
 	* the chunk below only applies to mapping when we haven't received store information 
@@ -277,8 +277,8 @@ Date Modified: Dec 4th, 2022
 *** merge exact and fuzzy match results together
 	append using "`exact'"
 	
-	* order and keep variables 
-	keep bank_name name* address addresbr zipbr id_store uninumbr store_lat store_lon sims_* city state exact fuzzy 
+	* order and keep variables (keep rssdid to find bank M&As)
+	keep rssdid bank_name name* address addresbr zipbr id_store uninumbr store_lat store_lon sims_* city state exact fuzzy 
 	replace exact = 0 if exact >=.
 	replace fuzzy = 0 if fuzzy >=.
 	
