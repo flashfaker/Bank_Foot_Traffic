@@ -7,7 +7,7 @@ Purpose: Analyze the cleaned weekly foot traffic data of 82 banks from Advan
 
 Author: Zirui Song
 Date Created: Jul 21st, 2022
-Date Modified: Dec 4th, 2022
+Date Modified: Jan 5th, 2023
 
 */
 
@@ -109,8 +109,16 @@ Date Modified: Dec 4th, 2022
 *** simple linear regression models 
 	* substract employees from the devices/dwelled traffic
 	foreach x in devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot {
-		replace `x' = `x' - employees
+		replace `x' = `x' - employees if `x' > employees // this is to take into account that we obtain a negative traffic in the end, which doesn't make sense
 	}
+	
+	* Add Dec 15th of 2022 -- Need to Check if We have Zero Values
+	sum devices_store devices_plot devices_store_or_plot dwelled_*
+	* zero values for devices_store/plot and all dwelled variables
+	* Add a 0.1 to each variable to get rid of the zero problem
+	foreach x of varlist devices_store devices_plot devices_store_or_plot dwelled_* {
+		replace `x' = `x' + 0.1
+	} 
 	
 	* generate traffic (according to advan definition, devices_plot/devices)
 	foreach x in _store _plot _store_or_plot {
@@ -128,6 +136,7 @@ Date Modified: Dec 4th, 2022
 	}
 	
 ***	* (added 2022/10/05 -- also generate dwelled traffic (raw or traffic))
+	
 	* generate dwelled traffic (according to advan definition, devices_plot/devices)
 	foreach x in dwelled_store dwelled_plot dwelled_store_or_plot employees {
 		gen tf_`x' = `x' / devices
@@ -143,11 +152,26 @@ Date Modified: Dec 4th, 2022
 		bysort id_store (year): gen logdiff_`var' = ln(`var'[_n]) - ln(`var'[_n-1])
 	}
 	
-	* log all the RHS variables (to interpret in terms of elasticities)
+*** log all the RHS variables (to interpret in terms of elasticities)
+	
 	foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot employees traffic_store traffic_plot traffic_store_or_plot tf_dwelled_store tf_dwelled_plot tf_dwelled_store_or_plot tf_employees {
 		replace `var' = ln(`var')
 	}
 	
+*** label variables for tables
+label var devices_store "ln(Devices in Store)"
+label var devices_plot "ln(Devices in Parking Plot)"
+label var devices_store_or_plot "ln(Devices in Store or Parking Plot)"
+label var traffic_store "ln(Traffic in Store)"
+label var traffic_plot "ln(Traffic in Parking Plot)"
+label var traffic_store_or_plot "ln(Traffic in Store or Parking Lot)"
+label var dwelled_store "ln(Dwelled Devices in Store)"
+label var dwelled_plot "ln(Dwelled Devices in Parking Plot)"
+label var dwelled_store_or_plot "ln(Dwelled Devices in Store or Parking Plot)"
+label var tf_dwelled_store "ln(Dwelled Traffic in Store)"
+label var tf_dwelled_plot "ln(Dwelled Traffic in Parking Plot)"
+label var tf_dwelled_store_or_plot "ln(Dwelled Traffic in Store or Parking Lot)"
+
 *** manipulation of bank deposits variable
 	save "$datadir/temp_annual_dep_traffic_wbkmo", replace
 
@@ -165,15 +189,14 @@ Date Modified: Dec 4th, 2022
 	bysort id_store (year): gen deltadepsumbr_w = (depsumbr_w[_n] - depsumbr_w[_n-1]) / depsumbr_w[_n-1]
 	bysort id_store (year): gen logdiffdepsumbr_w = logdepsumbr_w[_n] - logdepsumbr_w[_n-1]	
 	
-	save "$datadir/temp_annual_dep_traffic", replace
-	
-*********************************************************************************
-/* sensitivity test for main regression models (DiD) with Year + Id_Store FE structures */
-*********************************************************************************	
-*** this section tests the sensitivity of main results using sample that drops bkmo 
-*** or sample that doesn't drop bkmo
+	* label deposits 
+	label var logdepsumbr_w "ln(Annual Deposits)"
+	label var logdepsumbr "ln(Annual Deposits (Un-winsorized))"
 
-use "$datadir/temp_annual_dep_traffic_wbkmo", clear
+save "$datadir/temp_annual_dep_traffic", replace
+
+*** without dropping bank headquarters (bkmo == 1)
+	use "$datadir/temp_annual_dep_traffic_wbkmo", clear
 	* generate log deposits and log-diff deposits 
 	gen logdepsumbr = ln(depsumbr)
 	bysort id_store (year): gen deltadepsumbr = (depsumbr[_n] - depsumbr[_n-1]) / depsumbr[_n-1]
@@ -184,7 +207,168 @@ use "$datadir/temp_annual_dep_traffic_wbkmo", clear
 	gen logdepsumbr_w = ln(depsumbr_w)
 	bysort id_store (year): gen deltadepsumbr_w = (depsumbr_w[_n] - depsumbr_w[_n-1]) / depsumbr_w[_n-1]
 	bysort id_store (year): gen logdiffdepsumbr_w = logdepsumbr_w[_n] - logdepsumbr_w[_n-1]	
+	
+	* label deposits 
+	label var logdepsumbr_w "ln(Annual Deposits)"
+	label var logdepsumbr "ln(Annual Deposits (Un-winsorized))"
+	
 save "$datadir/temp_annual_dep_traffic_wbkmo", replace
+
+*********************************************************************************
+/* ADVAN REPORT OUTPUT TABLES (Into Latex Form) */
+*********************************************************************************	
+use "$datadir/temp_annual_dep_traffic", replace
+
+*** Summary Statistics Table ***
+
+estpost sum logdepsumbr_w devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot dwelled_* tf_dwelled_*
+esttab using "$tabdir/advan report/Summary Statistics.tex", replace ///
+cells("count(fmt(%9.0fc)) mean(fmt(%9.3f)) sd(fmt(%9.3f)) min(fmt(%9.3f)) max(fmt(%9.3f))") ///
+label noobs nonum collabels(Count Mean "Std. Dev." Min Max)
+
+
+*** Table 1 *** 
+* main regression table (devices variables with windorized deposits, without bkmo)
+foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+	eststo: reghdfe logdepsumbr_w `var', absorb(year id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table1.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+*** Table 2 ***
+* ROBUSTNESS: dwelled traffic outcome variables instead
+foreach var of varlist dwelled_* tf_dwelled_* {
+	eststo: reghdfe logdepsumbr_w `var', absorb(year id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table2.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+*** Table 3 ***
+* ROBUSTNESS: use unwinsorized log deposits instead
+foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+	eststo: reghdfe logdepsumbr `var', absorb(year id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table3.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+*** Table 4 ***
+* ROBUSTNESS: check results without dropping bank headquarters
+use "$datadir/temp_annual_dep_traffic_wbkmo", replace
+foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+	eststo: reghdfe logdepsumbr_w `var', absorb(year id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table4.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+*** Table 5 and 6 ***
+* ROBUSTNESS: check results with different FE structures
+use "$datadir/temp_annual_dep_traffic", replace
+egen state_year_fe = group(stalpbr year)
+egen county_year_fe = group(cntynumb year)
+
+* table 5 (state x year FE)
+foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+	eststo: reghdfe logdepsumbr_w `var', absorb(state_year_fe id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table5.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+* table 6 (county X year FE)
+foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+	eststo: reghdfe logdepsumbr_w `var', absorb(county_year_fe id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table6.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+*********************************************************************************
+* heterogeneity test by earlier years and later years as well as bank sizes
+
+*** Table 7 and 8 *** (regressions of 3 early years and 3 later years)
+use "$datadir/temp_annual_dep_traffic", replace
+keep if year <= 2018
+foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+	eststo: reghdfe logdepsumbr_w `var', absorb(year id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table_earlyyears.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+use "$datadir/temp_annual_dep_traffic", replace
+keep if year > 2018
+foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+	eststo: reghdfe logdepsumbr_w `var', absorb(year id_store) vce(cl zipbr)
+}
+esttab using "$tabdir/advan report/Table_lateryears.tex", replace ///
+nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+* clear storeed est
+eststo clear
+
+*** Table 9 and 10 *** (regressions of large banks and small banks)
+* obtain median bank asset size (avg across 6 years) threshold first
+use "$datadir/temp_annual_dep_traffic", replace
+preserve
+	collapse (mean) asset, by(rssdid)
+	egen median_asset = pctile(asset), p(90)
+	gen large_bank = 1 if asset >= median_asset
+	replace large_bank = 0 if asset < median_asset
+	tab large_bank
+	tempfile asset_median_split
+	save `asset_median_split'
+restore
+fmerge m:1 rssdid using `asset_median_split', keepusing(large_bank) nogen
+tab large_bank
+* 99 percent of obs are from large banks, so splitting by bank size doesn't quite work... Still below are the results
+
+preserve 
+	keep if large_bank == 1
+	foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+		eststo: reghdfe logdepsumbr_w `var', absorb(year id_store) vce(cl zipbr)
+	}
+	esttab using "$tabdir/advan report/Table_largebanks.tex", replace ///
+	nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+	star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+	* clear storeed est
+	eststo clear
+restore
+preserve
+	keep if large_bank == 0
+	foreach var of varlist devices_store devices_plot devices_store_or_plot traffic_store traffic_plot traffic_store_or_plot {
+		eststo: reghdfe logdepsumbr_w `var', absorb(year id_store) vce(cl zipbr)
+	}
+	esttab using "$tabdir/advan report/Table_smallbanks.tex", replace ///
+	nodepvars nomti nonum collabels(none) label b(3) se(3) parentheses ///
+	star(* 0.10 ** 0.05 *** 0.01) ar2 plain lines fragment noconstant
+	* clear storeed est
+	eststo clear
+restore
+
+
+*********************************************************************************
+/* sensitivity test for main regression models (DiD) with Year + Id_Store FE structures */
+*********************************************************************************	
+*** this section tests the sensitivity of main results using sample that drops bkmo 
+*** or sample that doesn't drop bkmo
 
 *** main regressions -- raw regressions of elasticity and log-diff of deposits and traffic
 use "$datadir/temp_annual_dep_traffic_wbkmo", clear
@@ -556,7 +740,7 @@ foreach y of varlist logdiffdepsumbr_w {
 foreach y of varlist logdepsumbr logdepsumbr_w {
 	* clustering by zip
 	foreach var of varlist devices_store devices_plot devices_store_or_plot dwelled_store dwelled_plot dwelled_store_or_plot employees traffic_store traffic_plot traffic_store_or_plot tf_dwelled_store tf_dwelled_plot tf_dwelled_store_or_plot tf_employees {
-		if "`var'" == "logdiff_devices_store" {
+		if "`var'" == "devices_store" {
 			reghdfe `y' `var', absorb(county_year_fe id_store) vce(cl zipbr)
 			outreg2 using "$tabdir/`y'_traffic_prediction_model_cntyyr.xls", /// 
 			title ("Annual Traffic Change on Branch Deposits") ctitle("`y'") ///
@@ -1818,7 +2002,7 @@ foreach state of local stnames {
 	Use Fed Data to Obtain M&A Cases from 2016 and onwards 
 	***************/	
 	
-use "$datadir/source data/advan_sod_crosswalk", clear
+use "$datadir/source data/advan_sod_crosswalk.dta", clear
 	* drop duplicates regarding id_store for now
 	duplicates drop id_store, force // 90 obs deleted for now
 	tempfile crosswalk
@@ -1883,16 +2067,16 @@ drop if week_date == .
 *** now obtain event windows for mergers (take 12 weeks pre and 16 weeks post periods for
 * any mergers)
 gen event_day = week_date - mna_date
-drop if event_day < -12
-drop if event_day > 16
+drop if event_day < -52
+drop if event_day > 52
 
 * generate dummies relative to mna week
-forv i = 1/16 {
+forv i = 1/52 {
 	bysort id_store (week_date): gen event_plus`i'weeks = 1 if event_day == `i' 
 	replace event_plus`i'weeks = 0 if event_plus`i'weeks >=.
 }
 
-forv i = 1/12 {
+forv i = 1/52 {
 	bysort id_store (week_date): gen event_minus`i'weeks = 1 if event_day == -`i'
 	replace event_minus`i'weeks = 0 if event_minus`i'weeks >=.
 }
@@ -2152,8 +2336,6 @@ twoway
 	ylabel(-0.2(0.1)0.2) graphregion(color(white));
 #delimit cr
 graph export "$figdir/traffic_employees_mna_dynamic_evolution.pdf", replace
-	
-}
 	
 ********************************************************************************
 capture log close

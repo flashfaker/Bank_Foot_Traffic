@@ -46,7 +46,9 @@ for (t in ticker) {
   # get year and quarter for collapsing (average within ID_store and year/quarter)
   DT[, year := year(day)]
   DT[, week := week(day)]
-  # collapse the data down to quarterly levels using variables available
+  # choose apps for data (either all (not choosing), C01, or SDK2)
+  # DT<-DT[app == "ALLD"]
+  # collapse the data down to weekly levels using variables available
   variables <- c("devices_store", "devices_plot", "devices_store_or_plot", 
                  "dwelled_store", "dwelled_plot", "dwelled_store_or_plot",
                  "devices", "devices_50", "employees")
