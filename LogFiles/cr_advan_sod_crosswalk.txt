@@ -10,3 +10,89 @@
 >         Clean Data
 >         ***************/
 .         
+.         use "$datadir/SOD/sodupdate2021.dta", clear
+
+. * first drop all years prior to 2015 as Advan data only from 2015-2022
+.         gsort year
+
+.         drop if year < 2015
+(1,897,012 observations deleted)
+
+.         
+. * check uninumbr (unique location for each branch (regardless of M&As)
+.         gsort uninumbr
+
+.         
+. * drop duplicates and also keep only variables useful for matching
+.         keep rssdid uninumbr-zipbr city2br sims_latitude sims_longitude namehcr 
+
+.         * make sure lat and long are not missing
+.         drop if sims_latitude == . | sims_longitude == .s
+(1,593 observations deleted)
+
+.         gduplicates drop 
+
+Duplicates in terms of all variables
+
+(358,575 observations deleted)
+
+.         * keep the first ones
+.         bysort uninumbr: keep if _n == 1
+(156,170 observations deleted)
+
+.         save "$datadir/SOD/sod_branch_location", replace
+file /Users/zsong/Dropbox (Chicago Booth)/Bank Foot Traffic/data/source data/SOD/sod_branch
+> _location.dta saved
+
+.         * save csv. for Advan
+.         export delimited "$datadir/SOD/sod_branch_location", replace
+(note: file /Users/zsong/Dropbox (Chicago Booth)/Bank Foot Traffic/data/source data/SOD/sod
+> _branch_location.csv not found)
+file /Users/zsong/Dropbox (Chicago Booth)/Bank Foot Traffic/data/source data/SOD/sod_branch
+> _location.csv saved
+
+.         * the chunk below only applies to mapping when we haven't received store informat
+> ion 
+. 
+end of do-file
+
+. help coefplot
+
+. ssc install coefplot
+checking coefplot consistency and verifying not already installed...
+installing into /Users/zsong/Library/Application Support/Stata/ado/plus/...
+installation complete.
+
+. help coefplot
+
+. help esttab
+
+. do "/Users/zsong/Dropbox (Chicago Booth)/Zirui/Research Ideas/bank_transparency_cecl/code
+> /an_callreports.do"
+
+. * analyze call reports dataset panel
+. local fname cr_callreports
+
+. 
+. ******************************* SYNOPSIS ***************************************
+. /* 
+> analyze the call reports data from 2015q1-2022q2, first replicate the R2 results
+> from Chen et al. (2022) paper, then produce DiD results based on CECL adoption 
+> in 2020Q1 to see the treatment effects of CECL on bank transparency proxied by
+> R2 in Chen et al. (2022)
+> 
+> Author: Zirui Song
+> Date Created: Nov 8th, 2022
+> Date Mofified: Nov 8th, 2022
+> 
+> */
+. 
+. /**************
+>         Basic Set-up
+>         ***************/
+.         clear all
+
+.         set more off, permanently
+(set more preference recorded)
+
+.         capture log close
