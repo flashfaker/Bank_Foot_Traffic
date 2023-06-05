@@ -959,6 +959,65 @@ bysort key_uninumbr (dist): keep if _n == 1
 
 save "$datadir/cleaned data/wells_fargo_nearest_branch.dta", replace
 
+
+***************************** PLOT TRENDS **************************************
+********************************************************************************
+
+
+use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", clear
+
+drop if year < 2017
+
+egen yw = group(year week)
+xtset id_store yw
+
+* generate traffic (according to advan definition, devices_plot/devices) (log)
+foreach x in _store _plot _store_or_plot {
+	replace devices`x' = devices`x' - employees // subtract employees from our measure of traffic 
+	gen traffic`x' = devices`x' / devices
+	* log traffic in order to interpret it in elasticities
+	replace traffic`x' = ln(traffic`x')
+	replace devices`x' = ln(devices`x')
+}
+gen traffic_employees = employees / devices 
+replace employees = ln(employees)
+replace traffic_employees = ln(traffic_employees)
+* generate traffic based on dwelled devices
+foreach x in _store _plot _store_or_plot {
+	replace dwelled`x' = dwelled`x' - employees // subtract employees from our measure of traffic 
+	gen tf_dwelled`x' = dwelled`x' / devices
+	* log traffic in order to interpret it in elasticities
+	replace tf_dwelled`x' = ln(tf_dwelled`x')
+	replace dwelled`x' = ln(dwelled`x')
+}
+
+collapse (mean) devices_store traffic_store *_plot, by(yw)
+
+
+twoway (tsline devices_store) (tsline devices_plot) (tsline devices_store_or_plot), ///
+graphregion(color(white)) xlabel(1(12)250)
+
+twoway (tsline traffic_store) (tsline traffic_plot) (tsline traffic_store_or_plot), ///
+graphregion(color(white)) xlabel(1(12)250)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ***************************** begin Event Study ********************************
 ********************************************************************************
 use "$datadir/cleaned data/weekly_advan_traffic_mergedbanks_updated20221004", clear
